@@ -78,3 +78,32 @@ if(BUILD_TESTING)
   enable_testing()
   add_subdirectory(tests)
 endif()
+
+if(WIN32)
+  # Keep the portable ZIP self-contained: CMake resolves the DLLs linked by the
+  # executable and installs them next to the executable.  The vcpkg directory
+  # is required for dependencies that are not copied into the build directory.
+  set(DK_RUNTIME_DEPENDENCY_DIRS)
+  if(DEFINED VCPKG_INSTALLED_DIR AND DEFINED VCPKG_TARGET_TRIPLET)
+    list(APPEND DK_RUNTIME_DEPENDENCY_DIRS
+      "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/bin")
+  endif()
+
+  install(TARGETS dota_keyboard
+    RUNTIME_DEPENDENCIES
+      DIRECTORIES ${DK_RUNTIME_DEPENDENCY_DIRS}
+      PRE_EXCLUDE_REGEXES "api-ms-win-.*" "ext-ms-win-.*"
+      POST_EXCLUDE_REGEXES ".*/[Ww]indows/[Ss]ystem32/.*"
+    RUNTIME DESTINATION ".")
+  install(FILES
+    assets/models/en_PP-OCRv5_rec_mobile_infer.onnx
+    assets/models/ppocrv5_en_dict.txt
+    DESTINATION "assets/models")
+  install(FILES config/default.json DESTINATION "." RENAME "config.json")
+  install(FILES README.ru.md DESTINATION ".")
+
+  set(CPACK_GENERATOR "ZIP")
+  set(CPACK_PACKAGE_FILE_NAME "dota-keyboard-${PROJECT_VERSION}-windows-x64")
+  set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY OFF)
+  include(CPack)
+endif()

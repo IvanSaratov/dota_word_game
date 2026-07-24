@@ -1,0 +1,56 @@
+name: Windows package
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-test-package:
+    runs-on: windows-2022
+    env:
+      VCPKG_ROOT: C:\vcpkg
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ runner.temp }}\vcpkg-binary-cache
+      VCPKG_BINARY_SOURCES: clear;files,${{ runner.temp }}\vcpkg-binary-cache,readwrite
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore vcpkg binary cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}\vcpkg-binary-cache
+          key: windows-2022-vcpkg-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}
+          restore-keys: |
+            windows-2022-vcpkg-
+
+      - name: Fetch pinned OCR assets
+        run: pwsh -NoProfile -File scripts/fetch-models.ps1
+
+      - name: Configure, build, test, install, and package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          cmake --preset windows-release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --build --preset windows-release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ctest --preset windows-release --output-on-failure *>&1 |
+            Tee-Object -FilePath build/windows-release/ctest-release.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --install build/windows-release --config Release --prefix dist
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cpack --preset windows-release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Upload ZIP and test results
+        uses: actions/upload-artifact@v4
+        with:
+          name: dota-keyboard-windows-x64
+          if-no-files-found: error
+          path: |
+            build/windows-release/dota-keyboard-*-windows-x64.zip
+            build/windows-release/ctest-release.log
