@@ -77,7 +77,7 @@ TEST_CASE("configuration rejects invalid values loaded from JSON") {
         std::invalid_argument);
 }
 
-TEST_CASE("configuration saves and loads without leaving its temporary sibling") {
+TEST_CASE("configuration atomically replaces an existing destination") {
     const auto directory = std::filesystem::temp_directory_path();
     const auto path = directory / "dota_keyboard_config_test.json";
     const auto temporary = std::filesystem::path{path.string() + ".tmp"};
@@ -88,9 +88,13 @@ TEST_CASE("configuration saves and loads without leaving its temporary sibling")
     config.window_title = L"\u0414\u043e\u0442\u0430 2";
     config.region = dk::Box{10, 20, 300, 400};
     config.region_configured = true;
+    dk::save_config(path, dk::AppConfig::defaults());
     dk::save_config(path, config);
 
-    CHECK(dk::load_config(path).window_title == config.window_title);
+    const auto restored = dk::load_config(path);
+    CHECK(restored.window_title == config.window_title);
+    CHECK(restored.region == config.region);
+    CHECK(restored.region_configured);
     CHECK_FALSE(std::filesystem::exists(temporary));
 
     std::filesystem::remove(path);

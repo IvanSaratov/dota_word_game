@@ -24,12 +24,17 @@ std::optional<Box> WindowLocator::client_screen_bounds(HWND window) {
         return std::nullopt;
     }
 
-    const auto width = bottom_right.x - top_left.x;
-    const auto height = bottom_right.y - top_left.y;
+    const auto width = static_cast<int>(bottom_right.x - top_left.x);
+    const auto height = static_cast<int>(bottom_right.y - top_left.y);
     if (width <= 0 || height <= 0) {
         return std::nullopt;
     }
-    return Box{top_left.x, top_left.y, width, height};
+    return Box{
+        static_cast<int>(top_left.x),
+        static_cast<int>(top_left.y),
+        width,
+        height,
+    };
 }
 
 std::optional<WindowBinding> WindowLocator::foreground() {
@@ -46,8 +51,9 @@ std::optional<WindowBinding> WindowLocator::foreground() {
 
     const auto title_length = GetWindowTextLengthW(window);
     std::vector<wchar_t> title(static_cast<std::size_t>(title_length) + 1);
+    SetLastError(ERROR_SUCCESS);
     const auto copied = GetWindowTextW(window, title.data(), static_cast<int>(title.size()));
-    if (copied < 0) {
+    if (copied == 0 && GetLastError() != ERROR_SUCCESS) {
         return std::nullopt;
     }
 

@@ -24,28 +24,39 @@ struct SelectionState {
     POINT start{};
     POINT current{};
     bool dragging{};
-    bool overlay_was_active{};
     bool finished{};
     std::optional<Box> result;
 };
 
 Box normalized_selection(const POINT start, const POINT end) {
-    const auto left = std::min(start.x, end.x);
-    const auto top = std::min(start.y, end.y);
+    const auto start_x = static_cast<int>(start.x);
+    const auto start_y = static_cast<int>(start.y);
+    const auto end_x = static_cast<int>(end.x);
+    const auto end_y = static_cast<int>(end.y);
+    const auto left = std::min(start_x, end_x);
+    const auto top = std::min(start_y, end_y);
     return Box{
         left,
         top,
-        std::max(start.x, end.x) - left,
-        std::max(start.y, end.y) - top,
+        std::max(start_x, end_x) - left,
+        std::max(start_y, end_y) - top,
     };
 }
 
 POINT clamped_point(HWND window, LPARAM value) {
     RECT client{};
     GetClientRect(window, &client);
+    const auto x = std::clamp(
+        GET_X_LPARAM(value),
+        static_cast<int>(client.left),
+        static_cast<int>(client.right));
+    const auto y = std::clamp(
+        GET_Y_LPARAM(value),
+        static_cast<int>(client.top),
+        static_cast<int>(client.bottom));
     return POINT{
-        std::clamp(GET_X_LPARAM(value), client.left, client.right),
-        std::clamp(GET_Y_LPARAM(value), client.top, client.bottom),
+        static_cast<LONG>(x),
+        static_cast<LONG>(y),
     };
 }
 
@@ -68,23 +79,13 @@ LRESULT CALLBACK overlay_window_proc(HWND window, UINT message, WPARAM wparam, L
     }
 
     switch (message) {
-        case WM_ACTIVATE:
-            if (state) {
-                if (LOWORD(wparam) != WA_INACTIVE) {
-                    state->overlay_was_active = true;
-                } else if (state->overlay_was_active && !state->finished) {
-                    cancel(window, *state);
-                }
-            }
-            return 0;
-
         case WM_TIMER:
             if (state && wparam == owner_check_timer && !state->finished) {
-                if (!IsWindow(state->owner)) {
-                    cancel(window, *state);
-                } else if (GetForegroundWindow() == window) {
-                    state->overlay_was_active = true;
-                } else if (state->overlay_was_active) {
+                const auto escape_down =
+                    (static_cast<unsigned short>(GetAsyncKeyState(VK_ESCAPE)) & 0x8000U) != 0;
+                const auto foreground = GetForegroundWindow();
+                if (!IsWindow(state->owner) || escape_down ||
+                    (foreground != window && foreground != state->owner)) {
                     cancel(window, *state);
                 }
             }
@@ -243,9 +244,6 @@ std::optional<Box> RegionSelector::select(HWND owner, const Box& client_screen_b
     UpdateWindow(overlay);
     SetForegroundWindow(overlay);
     SetFocus(overlay);
-    if (GetForegroundWindow() == overlay) {
-        state.overlay_was_active = true;
-    }
 
     bool repost_quit{};
     int quit_code{};

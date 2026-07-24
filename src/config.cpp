@@ -1,3 +1,9 @@
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#endif
+
 #include "dk/config.hpp"
 
 #include <cmath>
@@ -309,11 +315,11 @@ void save_config(const std::filesystem::path& path, const AppConfig& config) {
         }
         output.write(serialized.data(), static_cast<std::streamsize>(serialized.size()));
         output.flush();
+        output.close();
         if (!output) {
             throw std::runtime_error(
                 "unable to write temporary configuration: " + temporary.string());
         }
-        output.close();
         atomic_replace(temporary, path);
     } catch (...) {
         std::error_code ignored;
