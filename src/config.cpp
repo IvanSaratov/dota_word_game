@@ -132,6 +132,55 @@ std::wstring from_utf8(std::string_view text) {
     return result;
 }
 
+bool finite_positive(float value) noexcept {
+    return std::isfinite(value) && value > 0.0F;
+}
+
+void validate_ignored_region(const cv::Rect2f& region) {
+    if (!std::isfinite(region.x) || !std::isfinite(region.y) ||
+        !finite_positive(region.width) || !finite_positive(region.height) ||
+        region.x < 0.0F || region.y < 0.0F ||
+        region.x > 1.0F || region.y > 1.0F ||
+        region.width > 1.0F || region.height > 1.0F ||
+        region.x + region.width > 1.0F ||
+        region.y + region.height > 1.0F) {
+        throw std::invalid_argument(
+            "ignored detector regions must be finite positive rectangles inside [0,1]");
+    }
+}
+
+void validate_detector(const DetectorConfig& detector) {
+    if (detector.luminance_threshold < 0 ||
+        detector.luminance_threshold > 255) {
+        throw std::invalid_argument("detector luminance threshold must be between 0 and 255");
+    }
+    if (!finite_positive(detector.min_char_height_ratio) ||
+        !std::isfinite(detector.max_char_height_ratio) ||
+        detector.min_char_height_ratio > detector.max_char_height_ratio ||
+        detector.max_char_height_ratio > 1.0F) {
+        throw std::invalid_argument(
+            "detector character height ratios must satisfy 0 < min <= max <= 1");
+    }
+    if (!finite_positive(detector.baseline_tolerance_ratio)) {
+        throw std::invalid_argument(
+            "detector baseline tolerance ratio must be finite and positive");
+    }
+    if (!finite_positive(detector.max_gap_ratio)) {
+        throw std::invalid_argument(
+            "detector maximum gap ratio must be finite and positive");
+    }
+    if (detector.min_components_per_line < 1) {
+        throw std::invalid_argument(
+            "detector minimum components per line must be positive");
+    }
+    if (detector.crop_padding_px < 0) {
+        throw std::invalid_argument("detector crop padding cannot be negative");
+    }
+    for (const auto& region : detector.ignored_regions) {
+        validate_ignored_region(region);
+    }
+}
+
 void validate(const AppConfig& config) {
     if (config.region_configured && (config.region.width <= 0 || config.region.height <= 0)) {
         throw std::invalid_argument("configured region must have positive width and height");
@@ -146,6 +195,17 @@ void validate(const AppConfig& config) {
     if (config.hotkeys.calibrate == config.hotkeys.toggle) {
         throw std::invalid_argument("calibrate and toggle hotkeys must differ");
     }
+    if (config.tracker.confirm_frames < 2) {
+        throw std::invalid_argument("tracker confirmation requires at least two frames");
+    }
+    if (config.tracker.unlock_missing_frames < 1) {
+        throw std::invalid_argument("tracker unlock count must be positive");
+    }
+    if (!finite_positive(config.tracker.max_center_distance_px)) {
+        throw std::invalid_argument(
+            "tracker maximum center distance must be finite and positive");
+    }
+    validate_detector(config.detector);
 }
 
 Json box_to_json(const Box& box) {

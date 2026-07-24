@@ -6,6 +6,7 @@
 
 #include <limits>
 #include <sstream>
+#include <utility>
 #include <vector>
 
 namespace dk {
@@ -50,8 +51,12 @@ bool wait_for_delay(HANDLE timer, int delay_us, std::string& diagnostic) {
 
 }  // namespace
 
-Win32InputSink::Win32InputSink(HWND target, int inter_key_delay_us)
-    : target_(target), inter_key_delay_us_(inter_key_delay_us) {}
+Win32InputSink::Win32InputSink(
+    HWND target, int inter_key_delay_us,
+    CancellationPredicate cancellation)
+    : target_(target),
+      inter_key_delay_us_(inter_key_delay_us),
+      cancellation_(std::move(cancellation)) {}
 
 const std::string& Win32InputSink::last_diagnostic() const noexcept {
     return diagnostic_;
@@ -59,6 +64,9 @@ const std::string& Win32InputSink::last_diagnostic() const noexcept {
 
 SendStatus Win32InputSink::send_letters(std::string_view letters) {
     diagnostic_.clear();
+    const auto cancellation = [this] {
+        return cancellation_ && cancellation_();
+    };
 
     if (GetForegroundWindow() != target_) {
         diagnostic_ = "The bound target window is not foreground; no input was sent.";
@@ -72,6 +80,10 @@ SendStatus Win32InputSink::send_letters(std::string_view letters) {
         diagnostic_ = "Refusing text that exceeds the SendInput event limit.";
         return SendStatus::invalid_text;
     }
+    if (cancellation()) {
+        diagnostic_ = "Input was cancelled before any keyboard event was sent.";
+        return SendStatus::blocked;
+    }
 
     if (inter_key_delay_us_ <= 0) {
         std::vector<INPUT> events;
@@ -81,6 +93,15 @@ SendStatus Win32InputSink::send_letters(std::string_view letters) {
             events.push_back(key_event(letter, true));
         }
 
+        if (cancellation()) {
+            diagnostic_ = "Input was cancelled at the final send boundary.";
+            return SendStatus::blocked;
+        }
+        if (GetForegroundWindow() != target_) {
+            diagnostic_ =
+                "The bound target window lost foreground before the input batch.";
+            return SendStatus::not_foreground;
+        }
         const auto requested = static_cast<UINT>(events.size());
         SetLastError(ERROR_SUCCESS);
         const UINT accepted = SendInput(requested, events.data(), static_cast<int>(sizeof(INPUT)));
@@ -103,23 +124,34 @@ SendStatus Win32InputSink::send_letters(std::string_view letters) {
     }
 
     const auto close_timer = [&timer] { CloseHandle(timer); };
+    std::size_t sent_pairs{};
     for (std::size_t index = 0; index < letters.size(); ++index) {
         INPUT events[] = {key_event(letters[index], false), key_event(letters[index], true)};
+        if (cancellation()) {
+            diagnostic_ = "Input was cancelled; no further keyboard events were sent.";
+            close_timer();
+            return interrupted_send_status(sent_pairs, SendStatus::blocked);
+        }
         if (GetForegroundWindow() != target_) {
             diagnostic_ = "The bound target window is no longer foreground; no further input was sent.";
             close_timer();
-            return SendStatus::not_foreground;
+            return interrupted_send_status(
+                sent_pairs, SendStatus::not_foreground);
         }
         SetLastError(ERROR_SUCCESS);
         const UINT accepted = SendInput(2, events, static_cast<int>(sizeof(INPUT)));
         if (accepted != 2) {
             diagnostic_ = send_input_diagnostic(accepted, 2, GetLastError());
             close_timer();
-            return accepted == 0 ? SendStatus::blocked : SendStatus::partial;
+            if (accepted != 0) {
+                return SendStatus::partial;
+            }
+            return interrupted_send_status(sent_pairs, SendStatus::blocked);
         }
+        ++sent_pairs;
         if (index + 1 < letters.size() && !wait_for_delay(timer, inter_key_delay_us_, diagnostic_)) {
             close_timer();
-            return SendStatus::blocked;
+            return interrupted_send_status(sent_pairs, SendStatus::blocked);
         }
     }
     close_timer();

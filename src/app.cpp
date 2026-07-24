@@ -41,12 +41,14 @@ double milliseconds(Clock::duration elapsed) {
 }  // namespace
 
 App::App(const AppConfig& config, FrameSource& frames, CandidateDetector& detector,
-         LineRecognizer& recognizer, InputSink& input)
+         LineRecognizer& recognizer, InputSink& input,
+         CancellationPredicate cancellation)
     : config_(config),
       frames_(frames),
       detector_(detector),
       recognizer_(recognizer),
       input_(input),
+      cancellation_(std::move(cancellation)),
       tracker_(config.tracker) {}
 
 bool App::process_one_frame() {
@@ -106,6 +108,9 @@ bool App::process_one_frame() {
         if (!config_.live_input) {
             std::clog << "[DRY] would type " << selected->normalized_text << '\n';
             tracker_.mark_sent(*selected);
+        } else if (cancellation_ && cancellation_()) {
+            std::clog << "Input cancelled before dispatch for "
+                      << selected->normalized_text << '\n';
         } else {
             const auto status = input_.send_letters(selected->normalized_text);
             std::clog << "Input " << status_name(status) << " for "

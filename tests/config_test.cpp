@@ -66,6 +66,65 @@ TEST_CASE("configuration validation rejects unsafe values") {
     check_rejected([](auto& config) { config.hotkeys.toggle = config.hotkeys.calibrate; });
 }
 
+TEST_CASE("configuration validates tracker invariants") {
+    check_rejected([](auto& config) { config.tracker.confirm_frames = 1; });
+    check_rejected([](auto& config) { config.tracker.unlock_missing_frames = 0; });
+    check_rejected([](auto& config) { config.tracker.max_center_distance_px = 0.0F; });
+    check_rejected([](auto& config) {
+        config.tracker.max_center_distance_px =
+            std::numeric_limits<float>::quiet_NaN();
+    });
+    check_rejected([](auto& config) {
+        config.tracker.max_center_distance_px =
+            std::numeric_limits<float>::infinity();
+    });
+}
+
+TEST_CASE("configuration validates detector invariants") {
+    check_rejected([](auto& config) { config.detector.luminance_threshold = -1; });
+    check_rejected([](auto& config) { config.detector.luminance_threshold = 256; });
+    check_rejected([](auto& config) { config.detector.min_char_height_ratio = 0.0F; });
+    check_rejected([](auto& config) {
+        config.detector.min_char_height_ratio =
+            std::numeric_limits<float>::quiet_NaN();
+    });
+    check_rejected([](auto& config) {
+        config.detector.max_char_height_ratio =
+            config.detector.min_char_height_ratio - 0.001F;
+    });
+    check_rejected([](auto& config) { config.detector.max_char_height_ratio = 1.001F; });
+    check_rejected([](auto& config) { config.detector.baseline_tolerance_ratio = 0.0F; });
+    check_rejected([](auto& config) {
+        config.detector.baseline_tolerance_ratio =
+            std::numeric_limits<float>::infinity();
+    });
+    check_rejected([](auto& config) { config.detector.max_gap_ratio = 0.0F; });
+    check_rejected([](auto& config) {
+        config.detector.max_gap_ratio = std::numeric_limits<float>::quiet_NaN();
+    });
+    check_rejected([](auto& config) { config.detector.min_components_per_line = 0; });
+    check_rejected([](auto& config) { config.detector.crop_padding_px = -1; });
+}
+
+TEST_CASE("configuration validates normalized ignored rectangles") {
+    check_rejected([](auto& config) {
+        config.detector.ignored_regions.emplace_back(-0.01F, 0.0F, 0.5F, 0.5F);
+    });
+    check_rejected([](auto& config) {
+        config.detector.ignored_regions.emplace_back(0.0F, 0.0F, 0.0F, 0.5F);
+    });
+    check_rejected([](auto& config) {
+        config.detector.ignored_regions.emplace_back(0.75F, 0.0F, 0.5F, 0.5F);
+    });
+    check_rejected([](auto& config) {
+        config.detector.ignored_regions.emplace_back(0.0F, 0.75F, 0.5F, 0.5F);
+    });
+    check_rejected([](auto& config) {
+        config.detector.ignored_regions.emplace_back(
+            std::numeric_limits<float>::quiet_NaN(), 0.0F, 0.5F, 0.5F);
+    });
+}
+
 TEST_CASE("configuration rejects invalid values loaded from JSON") {
     CHECK_THROWS_AS(
         dk::parse_config(R"({"region_configured":true,"region":{"x":0,"y":0,"width":100,"height":0}})"),
@@ -74,6 +133,16 @@ TEST_CASE("configuration rejects invalid values loaded from JSON") {
     CHECK_THROWS_AS(dk::parse_config(R"({"inter_key_delay_us":-1})"), std::invalid_argument);
     CHECK_THROWS_AS(
         dk::parse_config(R"({"hotkeys":{"calibrate":118,"toggle":118}})"),
+        std::invalid_argument);
+    CHECK_THROWS_AS(
+        dk::parse_config(R"({"tracker":{"confirm_frames":1}})"),
+        std::invalid_argument);
+    CHECK_THROWS_AS(
+        dk::parse_config(R"({"detector":{"luminance_threshold":256}})"),
+        std::invalid_argument);
+    CHECK_THROWS_AS(
+        dk::parse_config(
+            R"({"detector":{"ignored_regions":[{"x":0.8,"y":0.1,"width":0.3,"height":0.2}]}})"),
         std::invalid_argument);
 }
 

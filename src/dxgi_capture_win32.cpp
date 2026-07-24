@@ -72,6 +72,8 @@ bool contains_region(const DXGI_OUTPUT_DESC& output, const RegionEdges& region) 
 
 class FrameReleaseGuard {
 public:
+    FrameReleaseGuard() = default;
+
     ~FrameReleaseGuard() {
         if (duplication_) {
             duplication_->ReleaseFrame();

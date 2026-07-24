@@ -1,6 +1,8 @@
 #include <chrono>
+#include <atomic>
 #include <cstddef>
 #include <deque>
+#include <functional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -52,9 +54,13 @@ public:
         crop_sizes.emplace_back(crop.cols, crop.rows);
         auto result = results_.front();
         results_.pop_front();
+        if (after_recognize) {
+            after_recognize();
+        }
         return result;
     }
 
+    std::function<void()> after_recognize;
     std::vector<std::pair<int, int>> crop_sizes;
 
 private:
@@ -163,6 +169,27 @@ TEST_CASE("blocked or partial input makes process_one_frame request a stop") {
         CHECK_FALSE(app.process_one_frame());
         REQUIRE(input.sent.size() == 1);
     }
+}
+
+TEST_CASE("cancellation during OCR prevents the final input call") {
+    auto config = dk::AppConfig::defaults();
+    config.live_input = true;
+    FakeFrameSource frames{2};
+    FakeDetector detector{{{30, 200, 180, 40}}};
+    FakeRecognizer recognizer{{{"TARGET", .99F}, {"TARGET", .99F}}};
+    FakeInputSink input;
+    std::atomic_bool processing_enabled{true};
+    dk::CancellationPredicate cancellation = [&processing_enabled] {
+        return !processing_enabled.load();
+    };
+    dk::App app(config, frames, detector, recognizer, input, cancellation);
+
+    CHECK(app.process_one_frame());
+    recognizer.after_recognize = [&processing_enabled] {
+        processing_enabled = false;
+    };
+    CHECK(app.process_one_frame());
+    CHECK(input.sent.empty());
 }
 
 TEST_CASE("frame timeout is a clean no-op") {

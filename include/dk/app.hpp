@@ -15,7 +15,8 @@ namespace dk {
 class App {
 public:
     App(const AppConfig& config, FrameSource& frames, CandidateDetector& detector,
-        LineRecognizer& recognizer, InputSink& input);
+        LineRecognizer& recognizer, InputSink& input,
+        CancellationPredicate cancellation = {});
     bool process_one_frame();
     [[nodiscard]] const std::optional<TextCandidate>& last_result() const noexcept;
     [[nodiscard]] const LatencyMetrics& metrics() const noexcept;
@@ -26,6 +27,7 @@ private:
     CandidateDetector& detector_;
     LineRecognizer& recognizer_;
     InputSink& input_;
+    CancellationPredicate cancellation_;
     TargetTracker tracker_;
     LatencyMetrics metrics_;
     std::optional<TextCandidate> last_result_;

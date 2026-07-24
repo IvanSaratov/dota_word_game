@@ -17,7 +17,9 @@ namespace dk {
 
 class Win32InputSink final : public InputSink {
 public:
-    Win32InputSink(HWND target, int inter_key_delay_us);
+    Win32InputSink(
+        HWND target, int inter_key_delay_us,
+        CancellationPredicate cancellation = {});
 
     SendStatus send_letters(std::string_view letters) override;
     [[nodiscard]] const std::string& last_diagnostic() const noexcept;
@@ -25,6 +27,7 @@ public:
 private:
     HWND target_{};
     int inter_key_delay_us_{};
+    CancellationPredicate cancellation_;
     std::string diagnostic_;
 };
 

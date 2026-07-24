@@ -36,6 +36,10 @@ int main() {
     bool valid = true;
     valid &= require_source_text(
         source,
+        "FrameReleaseGuard() = default;",
+        "keep the RAII frame guard default-constructible");
+    valid &= require_source_text(
+        source,
         "selected_desc.Rotation != DXGI_MODE_ROTATION_IDENTITY",
         "reject non-identity output rotation");
     valid &= require_source_text(
