@@ -1,2 +1,8 @@
-.worktrees/
-.superpowers/
+/.worktrees/
+/.superpowers/
+
+/build/
+/dist/
+/config.json
+/assets/models/*.onnx
+/assets/models/*.txt
