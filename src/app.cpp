@@ -50,6 +50,7 @@ App::App(const AppConfig& config, FrameSource& frames, CandidateDetector& detect
       tracker_(config.tracker) {}
 
 bool App::process_one_frame() {
+    last_result_.reset();
     const auto total_start = Clock::now();
     const auto capture_start = Clock::now();
     auto frame = frames_.next_frame();

@@ -79,26 +79,31 @@ private:
 
 }  // namespace
 
-TEST_CASE("app confirms normalizes and sends one lower target") {
+TEST_CASE("live app sends one confirmed target only once while it remains visible") {
     auto config = dk::AppConfig::defaults();
     config.live_input = true;
-    FakeFrameSource frames{2};
-    FakeDetector detector{{{50, 100, 250, 48}, {80, 500, 330, 48}}};
+    FakeFrameSource frames{4};
+    FakeDetector detector{{{80, 500, 330, 48}}};
     FakeRecognizer recognizer{{
-        {"DON'T PANIC!", .94F}, {"ROCK-'N'-ROLL", .96F},
-        {"DON'T PANIC!", .94F}, {"ROCK-'N'-ROLL", .96F},
+        {"ROCK-'N'-ROLL", .96F},
+        {"ROCK-'N'-ROLL", .96F},
+        {"ROCK-'N'-ROLL", .96F},
+        {"ROCK-'N'-ROLL", .96F},
     }};
     FakeInputSink input;
     dk::App app(config, frames, detector, recognizer, input);
 
     CHECK(app.process_one_frame());
     CHECK(app.process_one_frame());
+    REQUIRE(app.last_result());
+    CHECK((app.last_result()->bounds == dk::Box{80, 500, 330, 48}));
+    CHECK(app.process_one_frame());
+    CHECK(app.process_one_frame());
 
     REQUIRE(input.sent.size() == 1);
     CHECK(input.sent.front() == "ROCKNROLL");
-    REQUIRE(app.last_result());
-    CHECK((app.last_result()->bounds == dk::Box{80, 500, 330, 48}));
-    CHECK((recognizer.crop_sizes.front() == std::pair{250, 48}));
+    CHECK_FALSE(app.last_result());
+    CHECK((recognizer.crop_sizes.front() == std::pair{330, 48}));
 }
 
 TEST_CASE("dry run recognizes and locks without sending") {
@@ -116,11 +121,12 @@ TEST_CASE("dry run recognizes and locks without sending") {
 
     CHECK(app.process_one_frame());
     CHECK(app.process_one_frame());
+    REQUIRE(app.last_result());
+    CHECK(app.last_result()->normalized_text == "HYPERSTONE");
     CHECK(app.process_one_frame());
 
     CHECK(input.sent.empty());
-    REQUIRE(app.last_result());
-    CHECK(app.last_result()->normalized_text == "HYPERSTONE");
+    CHECK_FALSE(app.last_result());
 }
 
 TEST_CASE("app rejects empty and low confidence recognition") {
@@ -143,7 +149,7 @@ TEST_CASE("app rejects empty and low confidence recognition") {
     CHECK(input.sent.empty());
 }
 
-TEST_CASE("blocked or partial input stops processing and is not marked sent") {
+TEST_CASE("blocked or partial input makes process_one_frame request a stop") {
     for (const auto status : {dk::SendStatus::blocked, dk::SendStatus::partial}) {
         auto config = dk::AppConfig::defaults();
         config.live_input = true;

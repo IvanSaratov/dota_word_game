@@ -117,14 +117,15 @@ int wmain() {
         dk::Hotkeys hotkeys{config.hotkeys.calibrate, config.hotkeys.toggle};
 
         HWND target{};
-        if (config.region_configured) {
+        if (config.region_configured && !config.window_title.empty()) {
             const auto foreground = dk::WindowLocator::foreground();
-            if (foreground && (config.window_title.empty() ||
-                               foreground->title == config.window_title)) {
+            if (foreground && foreground->title == config.window_title) {
                 target = foreground->handle;
             } else {
                 std::cout << "Saved game window is not foreground; press F7 to bind it.\n";
             }
+        } else if (config.region_configured) {
+            std::cout << "Saved window title is empty; press F7 to bind the game.\n";
         } else {
             std::cout << "No calibrated region; focus the game and press F7.\n";
         }
@@ -197,11 +198,16 @@ int wmain() {
                 }
             }
 
-            if (!target || (config.region_configured && !IsWindow(target))) {
-                if (config.region_configured) {
-                    std::cerr << "Game window was destroyed; stopping.\n";
-                    break;
-                }
+            const auto now = std::chrono::steady_clock::now();
+            if (pipeline && now >= next_metrics) {
+                print_metrics(pipeline->app.metrics());
+                next_metrics = now + std::chrono::seconds{5};
+            }
+            if (target && !IsWindow(target)) {
+                std::cerr << "Game window was destroyed; stopping.\n";
+                break;
+            }
+            if (!target) {
                 continue;
             }
             if (!running) {
@@ -216,11 +222,6 @@ int wmain() {
                 break;
             }
 
-            const auto now = std::chrono::steady_clock::now();
-            if (now >= next_metrics) {
-                print_metrics(pipeline->app.metrics());
-                next_metrics = now + std::chrono::seconds{5};
-            }
         }
 
         if (pipeline) {

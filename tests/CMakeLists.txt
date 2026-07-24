@@ -27,6 +27,11 @@ target_compile_definitions(win32_input_sink_source_test PRIVATE
   DK_WIN32_INPUT_SINK_SOURCE_PATH="${PROJECT_SOURCE_DIR}/src/win32_input_sink.cpp")
 add_test(NAME win32_input_sink_source_test COMMAND win32_input_sink_source_test)
 
+add_executable(main_win32_source_test main_win32_source_test.cpp)
+target_compile_definitions(main_win32_source_test PRIVATE
+  DK_MAIN_WIN32_SOURCE_PATH="${PROJECT_SOURCE_DIR}/src/main_win32.cpp")
+add_test(NAME main_win32_source_test COMMAND main_win32_source_test)
+
 target_include_directories(ocr_preprocessor_test PRIVATE "${PROJECT_SOURCE_DIR}/src")
 target_link_libraries(candidate_detector_test PRIVATE ${OpenCV_LIBS})
 target_compile_definitions(candidate_detector_test PRIVATE

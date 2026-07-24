@@ -17,6 +17,11 @@
 - Added five-second and shutdown metric output plus clean stops for destroyed windows,
   invalid regions, console closure, blocked input, and partial input.
 - Added fake-driven Catch2 tests and CMake wiring for `app_test` and `dota_keyboard`.
+- Hardened startup recovery so only a non-empty exact saved title may auto-bind.
+  Missing/mismatched titles remain safely stopped in the hotkey loop for F7
+  calibration; a null target is never misreported as a destroyed window.
+- Periodic metrics are checked before unbound/stopped loop continues, so an existing
+  stopped pipeline still prints its five-second summary.
 
 ## TDD evidence
 
@@ -27,6 +32,9 @@
    adapters and a minimal OpenCV ABI stub.
 3. The harness passed 4/4 grouped scenarios: live lower-target input, dry run,
    rejection plus blocked/partial stop, and bounded metric summaries.
+4. Review regressions first failed because `last_result_` was sticky and the main loop
+   conflated an unbound target with a destroyed HWND. After the minimal fixes, the
+   portable harness and `main_win32_source_test` both passed.
 
 ## Verification
 
@@ -35,6 +43,19 @@
   headers.
 - `src/metrics.cpp` compiled with `-Wall -Wextra -Wpedantic`.
 - `git diff --check` passed.
+- The live dedupe test processes four identical frames for one target and observes
+  exactly one sink call. The dry-run test observes a result on confirmation and no
+  result on the following locked frame.
+- `main_win32_source_test` passed its startup binding, null-target recovery, and
+  stopped-state metric ordering checks.
+
+## Interface decision
+
+`App::run` was not added. The task's exact application boundary exposes
+`process_one_frame`, `last_result`, and `metrics`; hotkey polling, window lifetime,
+calibration, and periodic output belong to `main_win32.cpp`. A minimal `run()` would
+either duplicate that policy or be an uninterruptible loop, so the exact interface
+section governs and `process_one_frame` remains the coherent orchestration boundary.
 
 ## Environment caveat
 
