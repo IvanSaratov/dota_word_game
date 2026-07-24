@@ -5,8 +5,14 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 option(BUILD_TESTING "Build tests" ON)
 
-add_library(dk_core src/text_normalizer.cpp src/target_tracker.cpp)
-target_include_directories(dk_core PUBLIC include)
+find_package(OpenCV 4 REQUIRED COMPONENTS core imgcodecs imgproc)
+
+add_library(dk_core
+  src/text_normalizer.cpp
+  src/target_tracker.cpp
+  src/candidate_detector.cpp)
+target_include_directories(dk_core PUBLIC include ${OpenCV_INCLUDE_DIRS})
+target_link_libraries(dk_core PUBLIC ${OpenCV_LIBS})
 if(MSVC)
   target_compile_options(dk_core PRIVATE /W4 /permissive- /utf-8)
 else()
