@@ -8,6 +8,7 @@
 #include <fstream>
 #include <limits>
 #include <mutex>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -17,6 +18,7 @@
 #include <opencv2/imgproc.hpp>
 
 #include "dk/ctc_decoder.hpp"
+#include "ocr_preprocessor.hpp"
 
 namespace dk {
 namespace {
@@ -232,26 +234,16 @@ struct OcrRecognizer::Impl {
             0.0,
             0.0,
             cv::INTER_LINEAR);
-        cv::Mat padded(
-            kInputHeight, kInputWidth, CV_8UC3, cv::Scalar{0, 0, 0});
-        resized.copyTo(padded(cv::Rect{0, 0, resized_width, kInputHeight}));
-
-        input_buffer.resize(
-            static_cast<std::size_t>(kInputChannels * kInputHeight * kInputWidth));
-        const std::size_t plane_size =
-            static_cast<std::size_t>(kInputHeight * kInputWidth);
-        for (int row = 0; row < kInputHeight; ++row) {
-            const auto* pixels = padded.ptr<cv::Vec3b>(row);
-            for (int column = 0; column < kInputWidth; ++column) {
-                const std::size_t offset =
-                    static_cast<std::size_t>(row * kInputWidth + column);
-                for (int channel = 0; channel < kInputChannels; ++channel) {
-                    input_buffer[
-                        static_cast<std::size_t>(channel) * plane_size + offset] =
-                        (pixels[column][channel] / 255.0F - 0.5F) / 0.5F;
-                }
-            }
-        }
+        const std::size_t resized_storage_size =
+            (static_cast<std::size_t>(resized.rows) - 1) * resized.step[0] +
+            static_cast<std::size_t>(resized.cols * resized.channels());
+        detail::write_rgb_to_nchw(
+            std::span<const std::uint8_t>{resized.data, resized_storage_size},
+            static_cast<std::size_t>(resized.rows),
+            static_cast<std::size_t>(resized.cols),
+            resized.step[0],
+            kInputWidth,
+            input_buffer);
 
         const std::array<int64_t, 4> tensor_shape{
             1, kInputChannels, kInputHeight, kInputWidth};

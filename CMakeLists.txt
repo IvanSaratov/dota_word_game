@@ -13,6 +13,7 @@ add_library(dk_core
   src/target_tracker.cpp
   src/candidate_detector.cpp
   src/ctc_decoder.cpp
+  src/ocr_preprocessor.cpp
   src/ocr_recognizer.cpp)
 target_include_directories(dk_core PUBLIC include ${OpenCV_INCLUDE_DIRS})
 target_link_libraries(dk_core PUBLIC ${OpenCV_LIBS} onnxruntime::onnxruntime)
