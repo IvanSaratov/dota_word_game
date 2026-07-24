@@ -62,7 +62,7 @@ TEST_CASE("detector rejects the small green duplicate") {
     REQUIRE_FALSE(image.empty());
     const auto boxes = dk::CandidateDetector{}.detect(image);
     CHECK(std::ranges::none_of(boxes, [](const dk::Box& box) {
-        return box.center_y() > 525 && box.center_y() < 570 &&
-               box.height < 30;
+        return box.center_x() > 200 && box.center_x() < 430 &&
+               box.center_y() > 525 && box.center_y() < 570;
     }));
 }
