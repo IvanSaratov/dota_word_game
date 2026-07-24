@@ -15,6 +15,7 @@ dk_add_test(ocr_preprocessor_test ocr_preprocessor_test.cpp)
 dk_add_test(ocr_recognizer_test ocr_recognizer_test.cpp)
 dk_add_test(config_test config_test.cpp)
 dk_add_test(input_sink_test input_sink_test.cpp)
+dk_add_test(app_test app_test.cpp)
 
 add_executable(dxgi_capture_source_test dxgi_capture_source_test.cpp)
 target_compile_definitions(dxgi_capture_source_test PRIVATE

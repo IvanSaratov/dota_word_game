@@ -16,7 +16,9 @@ add_library(dk_core
   src/ctc_decoder.cpp
   src/ocr_preprocessor.cpp
   src/ocr_recognizer.cpp
-  src/config.cpp)
+  src/config.cpp
+  src/metrics.cpp
+  src/app.cpp)
 target_include_directories(dk_core PUBLIC include ${OpenCV_INCLUDE_DIRS})
 target_link_libraries(dk_core PUBLIC
   ${OpenCV_LIBS}
@@ -49,6 +51,9 @@ if(WIN32)
 
   add_executable(input_sink_smoke src/input_sink_smoke.cpp)
   target_link_libraries(input_sink_smoke PRIVATE dk_core)
+
+  add_executable(dota_keyboard src/main_win32.cpp)
+  target_link_libraries(dota_keyboard PRIVATE dk_core)
 endif()
 
 if(MSVC)
@@ -61,6 +66,9 @@ if(MSVC)
   endif()
   if(TARGET input_sink_smoke)
     target_compile_options(input_sink_smoke PRIVATE /W4 /permissive- /utf-8)
+  endif()
+  if(TARGET dota_keyboard)
+    target_compile_options(dota_keyboard PRIVATE /W4 /permissive- /utf-8)
   endif()
 else()
   target_compile_options(dk_core PRIVATE -Wall -Wextra -Wpedantic)
