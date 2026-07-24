@@ -171,6 +171,20 @@ TEST_CASE("blocked or partial input makes process_one_frame request a stop") {
     }
 }
 
+TEST_CASE("cancelled input is a nonfatal stop boundary and is not locked") {
+    auto config = dk::AppConfig::defaults();
+    config.live_input = true;
+    FakeFrameSource frames{2};
+    FakeDetector detector{{{30, 200, 180, 40}}};
+    FakeRecognizer recognizer{{{"TARGET", .99F}, {"TARGET", .99F}}};
+    FakeInputSink input{dk::SendStatus::cancelled};
+    dk::App app(config, frames, detector, recognizer, input);
+
+    CHECK(app.process_one_frame());
+    CHECK(app.process_one_frame());
+    REQUIRE(input.sent.size() == 1);
+}
+
 TEST_CASE("cancellation during OCR prevents the final input call") {
     auto config = dk::AppConfig::defaults();
     config.live_input = true;

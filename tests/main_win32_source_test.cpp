@@ -57,6 +57,10 @@ int main() {
         "hotkey polling must run independently of frame processing");
     valid &= require_text(
         source,
+        "dk::HotkeyState state_;",
+        "desired processing state must be separate from calibration pause");
+    valid &= require_text(
+        source,
         "dk::Hotkeys hotkeys",
         "the dedicated thread must own the Win32 hotkey message loop");
     valid &= require_text(

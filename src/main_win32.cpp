@@ -27,6 +27,7 @@
 #include "dk/config.hpp"
 #include "dk/dxgi_capture.hpp"
 #include "dk/hotkeys.hpp"
+#include "dk/hotkey_state.hpp"
 #include "dk/ocr_recognizer.hpp"
 #include "dk/region_selector.hpp"
 #include "dk/win32_input_sink.hpp"
@@ -74,11 +75,6 @@ std::optional<dk::Box> screen_region(HWND target, const dk::AppConfig& config) {
     };
 }
 
-struct CalibrationRequest {
-    bool resume_processing{};
-    std::uint64_t toggle_generation{};
-};
-
 class HotkeyController {
 public:
     explicit HotkeyController(const dk::HotkeyConfig& config) {
@@ -123,37 +119,23 @@ public:
     }
 
     [[nodiscard]] bool processing_enabled() const noexcept {
-        return processing_enabled_.load(std::memory_order_acquire);
+        return state_.processing_enabled();
     }
 
     [[nodiscard]] bool quit_requested() const noexcept {
-        return quit_requested_.load(std::memory_order_acquire);
+        return state_.quit_requested();
     }
 
-    [[nodiscard]] std::optional<CalibrationRequest> take_calibration_request() {
-        std::lock_guard lock{state_mutex_};
-        if (!calibration_requested_.exchange(false, std::memory_order_acq_rel)) {
-            return std::nullopt;
-        }
-        return CalibrationRequest{
-            calibration_resume_processing_,
-            calibration_toggle_generation_,
-        };
+    [[nodiscard]] bool take_calibration_request() {
+        return state_.take_calibration_request();
     }
 
-    void finish_calibration(
-        const CalibrationRequest& request, bool completed) {
-        std::lock_guard lock{state_mutex_};
-        if (toggle_generation_ == request.toggle_generation) {
-            processing_enabled_.store(
-                completed && request.resume_processing,
-                std::memory_order_release);
-        }
+    void finish_calibration() {
+        state_.finish_calibration();
     }
 
     void stop_processing() {
-        std::lock_guard lock{state_mutex_};
-        processing_enabled_.store(false, std::memory_order_release);
+        state_.stop_processing();
     }
 
     void rethrow_if_failed() const {
@@ -169,39 +151,19 @@ public:
 
 private:
     void request_calibration() {
-        std::lock_guard lock{state_mutex_};
-        if (calibration_requested_.load(std::memory_order_acquire)) {
-            processing_enabled_.store(false, std::memory_order_release);
-            return;
-        }
-        calibration_resume_processing_ =
-            processing_enabled_.exchange(false, std::memory_order_acq_rel);
-        calibration_toggle_generation_ = toggle_generation_;
-        calibration_requested_.store(true, std::memory_order_release);
+        state_.request_calibration();
     }
 
     void toggle_processing() {
-        std::lock_guard lock{state_mutex_};
-        ++toggle_generation_;
-        processing_enabled_.store(
-            !processing_enabled_.load(std::memory_order_acquire),
-            std::memory_order_release);
+        state_.toggle_processing();
     }
 
     void request_quit() {
-        std::lock_guard lock{state_mutex_};
-        processing_enabled_.store(false, std::memory_order_release);
-        quit_requested_.store(true, std::memory_order_release);
+        state_.request_quit();
     }
 
-    mutable std::mutex state_mutex_;
     mutable std::mutex failure_mutex_;
-    std::atomic_bool processing_enabled_{false};
-    std::atomic_bool calibration_requested_{false};
-    std::atomic_bool quit_requested_{false};
-    bool calibration_resume_processing_{};
-    std::uint64_t toggle_generation_{};
-    std::uint64_t calibration_toggle_generation_{};
+    dk::HotkeyState state_;
     std::exception_ptr thread_failure_;
     std::jthread worker_;
 };
@@ -299,7 +261,7 @@ int wmain(int argc, wchar_t* argv[]) {
                !control.quit_requested()) {
             control.rethrow_if_failed();
 
-            if (const auto request = control.take_calibration_request()) {
+            if (control.take_calibration_request()) {
                 announced_processing = false;
                 consecutive_frame_errors = 0;
                 if (pipeline) {
@@ -310,13 +272,13 @@ int wmain(int argc, wchar_t* argv[]) {
                 const auto binding = dk::WindowLocator::foreground();
                 if (!binding) {
                     std::cerr << "F7: no usable foreground game window.\n";
-                    control.finish_calibration(*request, false);
+                    control.finish_calibration();
                     continue;
                 }
                 const auto region =
                     dk::RegionSelector::select(binding->handle, binding->client_bounds);
                 if (!region) {
-                    control.finish_calibration(*request, false);
+                    control.finish_calibration();
                     std::cout << "Calibration cancelled"
                               << (control.processing_enabled()
                                       ? "; honoring the newer F8 request.\n"
@@ -331,7 +293,7 @@ int wmain(int argc, wchar_t* argv[]) {
                 dk::save_config("config.json", calibrated);
                 config = calibrated;
                 target = binding->handle;
-                control.finish_calibration(*request, true);
+                control.finish_calibration();
                 next_metrics = std::chrono::steady_clock::now() +
                                std::chrono::seconds{5};
                 std::cout << "Calibration saved"

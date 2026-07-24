@@ -6,7 +6,14 @@
 
 namespace dk {
 
-enum class SendStatus { sent, not_foreground, invalid_text, blocked, partial };
+enum class SendStatus {
+    sent,
+    not_foreground,
+    invalid_text,
+    cancelled,
+    blocked,
+    partial,
+};
 using CancellationPredicate = std::function<bool()>;
 
 class InputSink {

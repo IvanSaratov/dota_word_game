@@ -4,6 +4,7 @@
 #error "win32_input_sink.cpp is only available on Windows"
 #endif
 
+#include <algorithm>
 #include <limits>
 #include <sstream>
 #include <utility>
@@ -35,18 +36,32 @@ std::string win32_diagnostic(const char* operation, DWORD error) {
     return stream.str();
 }
 
-bool wait_for_delay(HANDLE timer, int delay_us, std::string& diagnostic) {
-    LARGE_INTEGER due_time{};
-    due_time.QuadPart = -static_cast<LONGLONG>(delay_us) * 10;
-    if (!SetWaitableTimer(timer, &due_time, 0, nullptr, nullptr, FALSE)) {
-        diagnostic = win32_diagnostic("SetWaitableTimer", GetLastError());
-        return false;
+enum class DelayWaitStatus { completed, cancelled, failed };
+
+DelayWaitStatus wait_for_delay(
+    HANDLE timer, int delay_us, const CancellationPredicate& cancellation,
+    std::string& diagnostic) {
+    constexpr int maximum_wait_slice_us{5000};
+    int remaining_us = delay_us;
+    while (remaining_us > 0) {
+        if (cancellation && cancellation()) {
+            return DelayWaitStatus::cancelled;
+        }
+
+        const int slice_us = (std::min)(remaining_us, maximum_wait_slice_us);
+        LARGE_INTEGER due_time{};
+        due_time.QuadPart = -static_cast<LONGLONG>(slice_us) * 10;
+        if (!SetWaitableTimer(timer, &due_time, 0, nullptr, nullptr, FALSE)) {
+            diagnostic = win32_diagnostic("SetWaitableTimer", GetLastError());
+            return DelayWaitStatus::failed;
+        }
+        if (WaitForSingleObject(timer, INFINITE) != WAIT_OBJECT_0) {
+            diagnostic = win32_diagnostic("WaitForSingleObject", GetLastError());
+            return DelayWaitStatus::failed;
+        }
+        remaining_us -= slice_us;
     }
-    if (WaitForSingleObject(timer, INFINITE) != WAIT_OBJECT_0) {
-        diagnostic = win32_diagnostic("WaitForSingleObject", GetLastError());
-        return false;
-    }
-    return true;
+    return DelayWaitStatus::completed;
 }
 
 }  // namespace
@@ -64,7 +79,7 @@ const std::string& Win32InputSink::last_diagnostic() const noexcept {
 
 SendStatus Win32InputSink::send_letters(std::string_view letters) {
     diagnostic_.clear();
-    const auto cancellation = [this] {
+    const CancellationPredicate cancellation = [this] {
         return cancellation_ && cancellation_();
     };
 
@@ -82,7 +97,7 @@ SendStatus Win32InputSink::send_letters(std::string_view letters) {
     }
     if (cancellation()) {
         diagnostic_ = "Input was cancelled before any keyboard event was sent.";
-        return SendStatus::blocked;
+        return SendStatus::cancelled;
     }
 
     if (inter_key_delay_us_ <= 0) {
@@ -95,7 +110,7 @@ SendStatus Win32InputSink::send_letters(std::string_view letters) {
 
         if (cancellation()) {
             diagnostic_ = "Input was cancelled at the final send boundary.";
-            return SendStatus::blocked;
+            return SendStatus::cancelled;
         }
         if (GetForegroundWindow() != target_) {
             diagnostic_ =
@@ -130,7 +145,8 @@ SendStatus Win32InputSink::send_letters(std::string_view letters) {
         if (cancellation()) {
             diagnostic_ = "Input was cancelled; no further keyboard events were sent.";
             close_timer();
-            return interrupted_send_status(sent_pairs, SendStatus::blocked);
+            return interrupted_send_status(
+                sent_pairs, SendStatus::cancelled);
         }
         if (GetForegroundWindow() != target_) {
             diagnostic_ = "The bound target window is no longer foreground; no further input was sent.";
@@ -149,9 +165,21 @@ SendStatus Win32InputSink::send_letters(std::string_view letters) {
             return interrupted_send_status(sent_pairs, SendStatus::blocked);
         }
         ++sent_pairs;
-        if (index + 1 < letters.size() && !wait_for_delay(timer, inter_key_delay_us_, diagnostic_)) {
-            close_timer();
-            return interrupted_send_status(sent_pairs, SendStatus::blocked);
+        if (index + 1 < letters.size()) {
+            const auto wait_status = wait_for_delay(
+                timer, inter_key_delay_us_, cancellation, diagnostic_);
+            if (wait_status == DelayWaitStatus::cancelled) {
+                diagnostic_ =
+                    "Input was cancelled during the inter-key delay; no further "
+                    "keyboard events were sent.";
+                close_timer();
+                return interrupted_send_status(
+                    sent_pairs, SendStatus::cancelled);
+            }
+            if (wait_status == DelayWaitStatus::failed) {
+                close_timer();
+                return interrupted_send_status(sent_pairs, SendStatus::blocked);
+            }
         }
     }
     close_timer();

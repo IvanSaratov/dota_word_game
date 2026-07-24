@@ -76,3 +76,35 @@ overlay or its owner game window to be foreground is intentional so the
 topmost clickable selector does not cancel merely because Windows returns
 focus to the owner during activation; any third-party foreground window still
 cancels selection.
+
+## Follow-up: desired hotkey state and cancellation
+
+The remaining hotkey-state review findings were addressed in a focused second
+RED/GREEN pass:
+
+- Added a portable `HotkeyState` that stores desired processing separately
+  from the temporary calibration pause. F7 pauses effective processing without
+  changing desired state. F8 during calibration toggles desired state, so one
+  F8 from a previously running state leaves processing stopped when calibration
+  finishes; without that F8 it resumes.
+- Added `SendStatus::cancelled`. Cancellation before any accepted keyboard
+  event returns `cancelled`; cancellation after a complete accepted prefix
+  returns `partial`. `App` handles `cancelled` nonfatally and does not lock the
+  target, while blocked/partial injection remains fatal.
+- Replaced one full inter-key timer wait with high-resolution waitable-timer
+  slices of at most 5 ms. The cancellation predicate is checked before every
+  slice, so F8 is observed promptly without a busy loop.
+
+Follow-up RED evidence:
+
+- `hotkey_state_portable_test` did not compile because the state model did not
+  exist.
+- `input_sink_portable_test` did not compile because `cancelled` did not exist.
+- Input, App, and main source regressions failed for the old blocked status,
+  monolithic delay, missing nonfatal App branch, and generation-based
+  calibration state.
+
+The focused GREEN set consists of the portable hotkey/input tests plus the
+Win32 input, App, and main source-control tests, all compiled with strict
+warnings. Native Windows build and interactive timing verification remain the
+same Windows-only caveat described above.

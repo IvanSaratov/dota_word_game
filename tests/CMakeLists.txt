@@ -46,6 +46,10 @@ add_executable(input_sink_portable_test input_sink_portable_test.cpp)
 target_include_directories(input_sink_portable_test PRIVATE "${PROJECT_SOURCE_DIR}/include")
 add_test(NAME input_sink_portable_test COMMAND input_sink_portable_test)
 
+add_executable(hotkey_state_portable_test hotkey_state_portable_test.cpp)
+target_include_directories(hotkey_state_portable_test PRIVATE "${PROJECT_SOURCE_DIR}/include")
+add_test(NAME hotkey_state_portable_test COMMAND hotkey_state_portable_test)
+
 target_include_directories(ocr_preprocessor_test PRIVATE "${PROJECT_SOURCE_DIR}/src")
 target_link_libraries(candidate_detector_test PRIVATE ${OpenCV_LIBS})
 target_compile_definitions(candidate_detector_test PRIVATE

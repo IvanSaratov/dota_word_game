@@ -21,9 +21,15 @@ TEST_CASE("interrupted delayed input is partial only after a complete sent prefi
         dk::interrupted_send_status(0, dk::SendStatus::blocked) ==
         dk::SendStatus::blocked);
     CHECK(
+        dk::interrupted_send_status(0, dk::SendStatus::cancelled) ==
+        dk::SendStatus::cancelled);
+    CHECK(
         dk::interrupted_send_status(1, dk::SendStatus::not_foreground) ==
         dk::SendStatus::partial);
     CHECK(
         dk::interrupted_send_status(2, dk::SendStatus::blocked) ==
+        dk::SendStatus::partial);
+    CHECK(
+        dk::interrupted_send_status(3, dk::SendStatus::cancelled) ==
         dk::SendStatus::partial);
 }

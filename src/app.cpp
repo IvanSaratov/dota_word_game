@@ -20,6 +20,7 @@ const char* status_name(SendStatus status) noexcept {
         case SendStatus::sent: return "sent";
         case SendStatus::not_foreground: return "not_foreground";
         case SendStatus::invalid_text: return "invalid_text";
+        case SendStatus::cancelled: return "cancelled";
         case SendStatus::blocked: return "blocked";
         case SendStatus::partial: return "partial";
     }
@@ -117,6 +118,9 @@ bool App::process_one_frame() {
                       << selected->normalized_text << '\n';
             if (status == SendStatus::sent) {
                 tracker_.mark_sent(*selected);
+            } else if (status == SendStatus::cancelled) {
+                std::clog << "Input cancellation is nonfatal; processing state "
+                             "will be consumed by the main loop.\n";
             } else if (status == SendStatus::blocked ||
                        status == SendStatus::partial) {
                 keep_running = false;
