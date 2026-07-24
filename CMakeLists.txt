@@ -83,6 +83,12 @@ if(WIN32)
   # Keep the portable ZIP self-contained: CMake resolves the DLLs linked by the
   # executable and installs them next to the executable.  The vcpkg directory
   # is required for dependencies that are not copied into the build directory.
+  # InstallRequiredSystemLibraries adds the MSVC/UCRT runtime DLLs separately;
+  # they are not guaranteed to appear in the executable dependency scan.
+  set(CMAKE_INSTALL_SYSTEM_RUNTIME_DESTINATION ".")
+  set(CMAKE_INSTALL_UCRT_LIBRARIES TRUE)
+  include(InstallRequiredSystemLibraries)
+
   set(DK_RUNTIME_DEPENDENCY_DIRS)
   if(DEFINED VCPKG_INSTALLED_DIR AND DEFINED VCPKG_TARGET_TRIPLET)
     list(APPEND DK_RUNTIME_DEPENDENCY_DIRS

@@ -15,6 +15,7 @@
 #include <memory>
 #include <optional>
 #include <stdexcept>
+#include <string_view>
 
 #include "dk/app.hpp"
 #include "dk/config.hpp"
@@ -98,12 +99,17 @@ dk::AppConfig load_startup_config() {
     return dk::load_config("config/default.json");
 }
 
+bool is_install_check(const int argc, wchar_t* argv[]) {
+    return argc == 2 && std::wstring_view{argv[1]} == L"--check-install";
+}
+
 }  // namespace
 
-int wmain() {
+int wmain(int argc, wchar_t* argv[]) {
     SetConsoleCtrlHandler(console_control, TRUE);
     try {
-        auto config = load_startup_config();
+        const bool install_check = is_install_check(argc, argv);
+        auto config = install_check ? dk::load_config("config.json") : load_startup_config();
         std::cout << "\n========================================\n"
                   << (config.live_input ? "       LIVE INPUT ENABLED\n"
                                         : "             DRY RUN\n")
@@ -114,6 +120,10 @@ int wmain() {
             "assets/models/en_PP-OCRv5_rec_mobile_infer.onnx",
             "assets/models/ppocrv5_en_dict.txt",
         };
+        if (is_install_check(argc, argv)) {
+            std::cout << "Install check succeeded.\n";
+            return 0;
+        }
         dk::Hotkeys hotkeys{config.hotkeys.calibrate, config.hotkeys.toggle};
 
         HWND target{};

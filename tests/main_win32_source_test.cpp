@@ -47,6 +47,39 @@ int main() {
         "if (!target) {\n                continue;\n            }",
         "an unbound startup must stay in the hotkey loop");
 
+    valid &= require_text(
+        source,
+        "int wmain(int argc, wchar_t* argv[])",
+        "the executable must receive command-line arguments");
+    valid &= require_text(
+        source,
+        "std::wstring_view{argv[1]} == L\"--check-install\"",
+        "the package smoke-check command must be recognized");
+    valid &= require_text(
+        source,
+        "Install check succeeded.",
+        "the package smoke-check must report success");
+    valid &= require_text(
+        source,
+        "dk::load_config(\"config.json\")",
+        "the package smoke-check must require the packaged config.json");
+
+    const auto install_mode = source.find("const bool install_check = is_install_check(argc, argv);");
+    const auto package_config = source.find("dk::load_config(\"config.json\")", install_mode);
+    const auto config_load = source.find("auto config = install_check ?");
+    const auto recognizer = source.find("dk::OcrRecognizer recognizer");
+    const auto install_check = source.find("if (is_install_check(argc, argv))");
+    const auto hotkeys = source.find("dk::Hotkeys hotkeys", recognizer);
+    if (install_mode == std::string::npos || package_config == std::string::npos ||
+        config_load == std::string::npos || recognizer == std::string::npos ||
+        install_check == std::string::npos || hotkeys == std::string::npos ||
+        install_mode > package_config || package_config > recognizer ||
+        config_load > recognizer || recognizer > install_check ||
+        install_check > hotkeys) {
+        std::cerr << "install check must load config and OCR dependencies before hotkeys\n";
+        valid = false;
+    }
+
     const auto summary = source.find("if (pipeline && now >= next_metrics)");
     const auto unbound_continue = source.find("if (!target) {", summary);
     const auto stopped_continue = source.find("if (!running) {", summary);

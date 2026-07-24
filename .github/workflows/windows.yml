@@ -12,7 +12,6 @@ jobs:
   build-test-package:
     runs-on: windows-2022
     env:
-      VCPKG_ROOT: C:\vcpkg
       VCPKG_DEFAULT_BINARY_CACHE: ${{ runner.temp }}\vcpkg-binary-cache
       VCPKG_BINARY_SOURCES: clear;files,${{ runner.temp }}\vcpkg-binary-cache,readwrite
 
@@ -26,6 +25,16 @@ jobs:
           key: windows-2022-vcpkg-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}
           restore-keys: |
             windows-2022-vcpkg-
+
+      - name: Configure vcpkg environment
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not $env:VCPKG_INSTALLATION_ROOT) {
+            throw 'The runner did not provide VCPKG_INSTALLATION_ROOT.'
+          }
+          "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" >> $env:GITHUB_ENV
+          New-Item -ItemType Directory -Force -Path $env:VCPKG_DEFAULT_BINARY_CACHE | Out-Null
 
       - name: Fetch pinned OCR assets
         run: pwsh -NoProfile -File scripts/fetch-models.ps1
@@ -46,11 +55,62 @@ jobs:
           cpack --preset windows-release
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Upload ZIP and test results
+      - name: Upload CTest log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dota-keyboard-windows-ctest-log
+          if-no-files-found: warn
+          path: build/windows-release/ctest-release.log
+
+      - name: Validate packaged ZIP
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $zip = @(Get-ChildItem -Path build/windows-release -Filter 'dota-keyboard-*-windows-x64.zip' -File)
+          if ($zip.Count -ne 1) {
+            throw "Expected exactly one package ZIP, found $($zip.Count)."
+          }
+          $extractRoot = Join-Path $env:RUNNER_TEMP "dota-keyboard-package-smoke-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
+          New-Item -ItemType Directory -Path $extractRoot | Out-Null
+          Expand-Archive -LiteralPath $zip[0].FullName -DestinationPath $extractRoot
+          foreach ($relativePath in @(
+            'dota_keyboard.exe',
+            'assets/models/en_PP-OCRv5_rec_mobile_infer.onnx',
+            'assets/models/ppocrv5_en_dict.txt',
+            'config.json',
+            'README.ru.md'
+          )) {
+            if (-not (Test-Path (Join-Path $extractRoot $relativePath) -PathType Leaf)) {
+              throw "Package is missing $relativePath."
+            }
+          }
+          foreach ($dllPattern in @('onnxruntime.dll', 'opencv_core*.dll', 'vcruntime140*.dll', 'msvcp140*.dll')) {
+            if (-not (Get-ChildItem -Path $extractRoot -Filter $dllPattern -File)) {
+              throw "Package is missing runtime dependency matching $dllPattern."
+            }
+          }
+          $forbiddenFiles = Get-ChildItem -Path $extractRoot -Recurse -File |
+            Where-Object {
+              $_.Extension -in @('.c', '.cc', '.cpp', '.h', '.hpp', '.py') -or
+              $_.FullName -match '[\\/](tests?|vcpkg_installed)[\\/]'
+            }
+          if ($forbiddenFiles) {
+            throw "Package contains forbidden source/test/Python files: $($forbiddenFiles.FullName -join ', ')"
+          }
+          Push-Location $extractRoot
+          try {
+            & .\dota_keyboard.exe --check-install
+            if ($LASTEXITCODE -ne 0) {
+              throw "dota_keyboard.exe --check-install exited with $LASTEXITCODE."
+            }
+          } finally {
+            Pop-Location
+          }
+
+      - name: Upload validated ZIP
         uses: actions/upload-artifact@v4
         with:
           name: dota-keyboard-windows-x64
           if-no-files-found: error
-          path: |
-            build/windows-release/dota-keyboard-*-windows-x64.zip
-            build/windows-release/ctest-release.log
+          path: build/windows-release/dota-keyboard-*-windows-x64.zip
