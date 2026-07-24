@@ -14,6 +14,12 @@ dk_add_test(ctc_decoder_test ctc_decoder_test.cpp)
 dk_add_test(ocr_preprocessor_test ocr_preprocessor_test.cpp)
 dk_add_test(ocr_recognizer_test ocr_recognizer_test.cpp)
 dk_add_test(config_test config_test.cpp)
+
+add_executable(dxgi_capture_source_test dxgi_capture_source_test.cpp)
+target_compile_definitions(dxgi_capture_source_test PRIVATE
+  DK_DXGI_CAPTURE_SOURCE_PATH="${PROJECT_SOURCE_DIR}/src/dxgi_capture_win32.cpp")
+add_test(NAME dxgi_capture_source_test COMMAND dxgi_capture_source_test)
+
 target_include_directories(ocr_preprocessor_test PRIVATE "${PROJECT_SOURCE_DIR}/src")
 target_link_libraries(candidate_detector_test PRIVATE ${OpenCV_LIBS})
 target_compile_definitions(candidate_detector_test PRIVATE

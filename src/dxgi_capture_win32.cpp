@@ -128,7 +128,8 @@ public:
             return std::nullopt;
         }
         if (acquire_result == DXGI_ERROR_ACCESS_LOST) {
-            recreate_duplication();
+            acquired_resource.Reset();
+            initialize();
             return std::nullopt;
         }
         require_success(acquire_result, "acquire duplicated desktop frame");
@@ -177,6 +178,8 @@ public:
 
 private:
     void initialize() {
+        reset_capture_state();
+
         ComPtr<IDXGIFactory1> factory;
         require_success(
             CreateDXGIFactory1(IID_PPV_ARGS(factory.GetAddressOf())),
@@ -225,6 +228,10 @@ private:
                 "DXGI capture region must fit entirely within one monitor output; "
                 "regions outside or spanning monitors are unsupported");
         }
+        if (selected_desc.Rotation != DXGI_MODE_ROTATION_IDENTITY) {
+            throw std::runtime_error(
+                "rotated monitor outputs are unsupported by DXGI region capture");
+        }
 
         require_success(
             selected_output_.As(&output1_), "query DXGI 1.2 output interface");
@@ -272,6 +279,18 @@ private:
         source_box_.back = 1;
 
         frame_buffer_.create(screen_region_.height, screen_region_.width, CV_8UC4);
+    }
+
+    void reset_capture_state() noexcept {
+        duplication_.Reset();
+        staging_texture_.Reset();
+        context_.Reset();
+        device_.Reset();
+        output1_.Reset();
+        selected_output_.Reset();
+        selected_adapter_.Reset();
+        source_box_ = {};
+        frame_buffer_.release();
     }
 
     void recreate_duplication() {
