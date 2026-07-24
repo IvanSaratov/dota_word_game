@@ -27,7 +27,9 @@ if(WIN32)
   target_sources(dk_core PRIVATE
     src/window_locator_win32.cpp
     src/region_selector_win32.cpp
-    src/dxgi_capture_win32.cpp)
+    src/dxgi_capture_win32.cpp
+    src/win32_input_sink.cpp
+    src/hotkeys_win32.cpp)
   target_link_libraries(dk_core PUBLIC user32 gdi32 d3d11 dxgi)
 
   add_executable(window_locator_smoke
@@ -44,6 +46,9 @@ if(WIN32)
     RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/src"
     RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO "${CMAKE_BINARY_DIR}/src"
     RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL "${CMAKE_BINARY_DIR}/src")
+
+  add_executable(input_sink_smoke src/input_sink_smoke.cpp)
+  target_link_libraries(input_sink_smoke PRIVATE dk_core)
 endif()
 
 if(MSVC)
@@ -53,6 +58,9 @@ if(MSVC)
   endif()
   if(TARGET capture_smoke)
     target_compile_options(capture_smoke PRIVATE /W4 /permissive- /utf-8)
+  endif()
+  if(TARGET input_sink_smoke)
+    target_compile_options(input_sink_smoke PRIVATE /W4 /permissive- /utf-8)
   endif()
 else()
   target_compile_options(dk_core PRIVATE -Wall -Wextra -Wpedantic)
