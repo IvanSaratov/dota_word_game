@@ -8,6 +8,8 @@
   uses a high-resolution waitable timer between delayed keys.
 - Added diagnostics for rejected input, lost focus, partial/blocked `SendInput` calls,
   including `GetLastError` and the UIPI/elevated-target caveat.
+- Delayed input rechecks the bound foreground window immediately before every key pair,
+  so a focus change stops further injection with `not_foreground`.
 - Added message-only-window global hotkey registration for F7/F8-style configured
   virtual keys, `WM_QUIT` handling, and destructor cleanup.
 - Added a minimal Notepad smoke executable that reports one event per F7/F8 press and
@@ -26,6 +28,8 @@
 - `g++ -std=c++20 -Wall -Wextra -Wpedantic -Iinclude ...` passed the portable
   validation assertions and syntax-only inclusion of all public headers.
 - `git diff --check` passed.
+- `win32_input_sink_source_test` verifies the delayed per-letter loop contains that
+  foreground guard before its `SendInput` call.
 
 ## Environment caveat
 

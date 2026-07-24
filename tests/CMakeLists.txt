@@ -21,6 +21,11 @@ target_compile_definitions(dxgi_capture_source_test PRIVATE
   DK_DXGI_CAPTURE_SOURCE_PATH="${PROJECT_SOURCE_DIR}/src/dxgi_capture_win32.cpp")
 add_test(NAME dxgi_capture_source_test COMMAND dxgi_capture_source_test)
 
+add_executable(win32_input_sink_source_test win32_input_sink_source_test.cpp)
+target_compile_definitions(win32_input_sink_source_test PRIVATE
+  DK_WIN32_INPUT_SINK_SOURCE_PATH="${PROJECT_SOURCE_DIR}/src/win32_input_sink.cpp")
+add_test(NAME win32_input_sink_source_test COMMAND win32_input_sink_source_test)
+
 target_include_directories(ocr_preprocessor_test PRIVATE "${PROJECT_SOURCE_DIR}/src")
 target_link_libraries(candidate_detector_test PRIVATE ${OpenCV_LIBS})
 target_compile_definitions(candidate_detector_test PRIVATE

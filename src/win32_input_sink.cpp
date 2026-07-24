@@ -105,6 +105,11 @@ SendStatus Win32InputSink::send_letters(std::string_view letters) {
     const auto close_timer = [&timer] { CloseHandle(timer); };
     for (std::size_t index = 0; index < letters.size(); ++index) {
         INPUT events[] = {key_event(letters[index], false), key_event(letters[index], true)};
+        if (GetForegroundWindow() != target_) {
+            diagnostic_ = "The bound target window is no longer foreground; no further input was sent.";
+            close_timer();
+            return SendStatus::not_foreground;
+        }
         SetLastError(ERROR_SUCCESS);
         const UINT accepted = SendInput(2, events, static_cast<int>(sizeof(INPUT)));
         if (accepted != 2) {
