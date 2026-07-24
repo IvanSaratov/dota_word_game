@@ -5,7 +5,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 option(BUILD_TESTING "Build tests" ON)
 
-add_library(dk_core src/text_normalizer.cpp)
+add_library(dk_core src/text_normalizer.cpp src/target_tracker.cpp)
 target_include_directories(dk_core PUBLIC include)
 if(MSVC)
   target_compile_options(dk_core PRIVATE /W4 /permissive- /utf-8)
