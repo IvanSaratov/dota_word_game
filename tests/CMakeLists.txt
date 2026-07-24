@@ -13,6 +13,7 @@ dk_add_test(candidate_detector_test candidate_detector_test.cpp)
 dk_add_test(ctc_decoder_test ctc_decoder_test.cpp)
 dk_add_test(ocr_preprocessor_test ocr_preprocessor_test.cpp)
 dk_add_test(ocr_recognizer_test ocr_recognizer_test.cpp)
+dk_add_test(config_test config_test.cpp)
 target_include_directories(ocr_preprocessor_test PRIVATE "${PROJECT_SOURCE_DIR}/src")
 target_link_libraries(candidate_detector_test PRIVATE ${OpenCV_LIBS})
 target_compile_definitions(candidate_detector_test PRIVATE

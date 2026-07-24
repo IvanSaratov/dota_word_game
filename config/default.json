@@ -1,0 +1,32 @@
+{
+  "window_title": "",
+  "region": {
+    "x": 0,
+    "y": 0,
+    "width": 0,
+    "height": 0
+  },
+  "region_configured": false,
+  "live_input": false,
+  "min_ocr_confidence": 0.8,
+  "inter_key_delay_us": 0,
+  "detector": {
+    "luminance_threshold": 145,
+    "min_char_height_ratio": 0.025,
+    "max_char_height_ratio": 0.075,
+    "baseline_tolerance_ratio": 0.3,
+    "max_gap_ratio": 1.5,
+    "min_components_per_line": 3,
+    "crop_padding_px": 6,
+    "ignored_regions": []
+  },
+  "tracker": {
+    "confirm_frames": 2,
+    "max_center_distance_px": 90.0,
+    "unlock_missing_frames": 2
+  },
+  "hotkeys": {
+    "calibrate": 118,
+    "toggle": 119
+  }
+}
