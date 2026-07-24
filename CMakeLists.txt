@@ -26,8 +26,9 @@ target_link_libraries(dk_core PUBLIC
 if(WIN32)
   target_sources(dk_core PRIVATE
     src/window_locator_win32.cpp
-    src/region_selector_win32.cpp)
-  target_link_libraries(dk_core PUBLIC user32 gdi32)
+    src/region_selector_win32.cpp
+    src/dxgi_capture_win32.cpp)
+  target_link_libraries(dk_core PUBLIC user32 gdi32 d3d11 dxgi)
 
   add_executable(window_locator_smoke
     src/window_locator_win32.cpp
@@ -35,12 +36,23 @@ if(WIN32)
   target_include_directories(window_locator_smoke PRIVATE include)
   target_compile_definitions(window_locator_smoke PRIVATE DK_WINDOW_LOCATOR_SMOKE)
   target_link_libraries(window_locator_smoke PRIVATE user32 gdi32)
+
+  add_executable(capture_smoke src/capture_smoke.cpp)
+  target_link_libraries(capture_smoke PRIVATE dk_core)
+  set_target_properties(capture_smoke PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}/src"
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/src"
+    RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO "${CMAKE_BINARY_DIR}/src"
+    RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL "${CMAKE_BINARY_DIR}/src")
 endif()
 
 if(MSVC)
   target_compile_options(dk_core PRIVATE /W4 /permissive- /utf-8)
   if(TARGET window_locator_smoke)
     target_compile_options(window_locator_smoke PRIVATE /W4 /permissive- /utf-8)
+  endif()
+  if(TARGET capture_smoke)
+    target_compile_options(capture_smoke PRIVATE /W4 /permissive- /utf-8)
   endif()
 else()
   target_compile_options(dk_core PRIVATE -Wall -Wextra -Wpedantic)
