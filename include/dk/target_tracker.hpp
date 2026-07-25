@@ -11,7 +11,7 @@ namespace dk {
 struct TrackerConfig {
     int confirm_frames{2};
     float max_center_distance_px{90.0F};
-    int unlock_missing_frames{2};
+    int unlock_missing_frames{15};
 };
 
 class TargetTracker {

@@ -12,6 +12,11 @@ static TextCandidate word(std::string text, int y, int x = 100) {
     return {text, text, 0.95F, Box{x, y, 240, 48}};
 }
 
+static TextCandidate boxed_word(
+    std::string text, Box bounds, float confidence = 0.99F) {
+    return {text, text, confidence, bounds};
+}
+
 static std::optional<TextCandidate> update_tracker(
     dk::TargetTracker& tracker,
     std::initializer_list<TextCandidate> candidates) {
@@ -49,7 +54,7 @@ TEST_CASE("tracker chooses the lower confirmed target") {
 }
 
 TEST_CASE("sent target stays locked until missing") {
-    dk::TargetTracker tracker;
+    dk::TargetTracker tracker({.unlock_missing_frames = 2});
     update_tracker(tracker, {word("AGAIN", 300)});
     auto ready = update_tracker(tracker, {word("AGAIN", 306)});
     REQUIRE(ready);
@@ -107,13 +112,14 @@ TEST_CASE("temporary partial OCR does not unlock a sent moving target") {
     REQUIRE(ready);
     tracker.mark_sent(*ready);
 
-    CHECK_FALSE(update_tracker(tracker, {word("ANE", 200)}));
+    CHECK_FALSE(update_tracker(
+        tracker, {boxed_word("ANE", {220, 200, 80, 48})}));
     CHECK_FALSE(update_tracker(tracker, {word("BANE", 250)}));
     CHECK_FALSE(update_tracker(tracker, {word("BANE", 300)}));
 }
 
 TEST_CASE("same word can be selected again after the old target disappears") {
-    dk::TargetTracker tracker;
+    dk::TargetTracker tracker({.unlock_missing_frames = 2});
     CHECK_FALSE(update_tracker(tracker, {word("BANE", 100)}));
     auto ready = update_tracker(tracker, {word("BANE", 150)});
     REQUIRE(ready);
@@ -121,6 +127,87 @@ TEST_CASE("same word can be selected again after the old target disappears") {
 
     CHECK_FALSE(update_tracker(tracker, {}));
     CHECK_FALSE(update_tracker(tracker, {}));
+    CHECK_FALSE(update_tracker(tracker, {word("BANE", 100)}));
+    CHECK(update_tracker(tracker, {word("BANE", 150)}));
+}
+
+TEST_CASE("sent exact text reacquires after a short gap and position jump") {
+    dk::TargetTracker tracker;
+    CHECK_FALSE(update_tracker(
+        tracker, {boxed_word("MEDUSA", {213, 357, 229, 51})}));
+    auto ready = update_tracker(
+        tracker, {boxed_word("MEDUSA", {215, 356, 229, 51})});
+    REQUIRE(ready);
+    tracker.mark_sent(*ready);
+
+    for (int frame = 0; frame < 14; ++frame) {
+        CHECK_FALSE(update_tracker(tracker, {}));
+    }
+    CHECK_FALSE(update_tracker(
+        tracker, {boxed_word("MEDUSA", {455, 695, 229, 51})}));
+    CHECK_FALSE(update_tracker(
+        tracker, {boxed_word("MEDUSA", {462, 716, 229, 52})}));
+}
+
+TEST_CASE("sent word consumes nearby stable cropped fragments") {
+    struct Scenario {
+        const char* full;
+        Box full_bounds;
+        const char* fragment;
+        Box fragment_bounds;
+    };
+    const Scenario scenarios[] = {
+        {"HYPERSTONE", {380, 583, 341, 52}, "HYPE", {398, 658, 134, 51}},
+        {"BLADEMAIL", {393, 581, 315, 66}, "EMA", {542, 579, 89, 49}},
+        {"BLOODTHORN", {715, 0, 380, 34}, "RN", {1015, 0, 78, 33}},
+        {"BLOODTHORN", {715, 0, 380, 34}, "DIH", {857, 0, 109, 33}},
+    };
+
+    for (const auto& scenario : scenarios) {
+        dk::TargetTracker tracker;
+        CHECK_FALSE(update_tracker(
+            tracker, {boxed_word(scenario.full, scenario.full_bounds)}));
+        auto ready = update_tracker(
+            tracker, {boxed_word(scenario.full, scenario.full_bounds)});
+        REQUIRE(ready);
+        tracker.mark_sent(*ready);
+
+        CHECK_FALSE(update_tracker(
+            tracker,
+            {boxed_word(scenario.fragment, scenario.fragment_bounds)}));
+        CHECK_FALSE(update_tracker(
+            tracker,
+            {boxed_word(scenario.fragment, scenario.fragment_bounds)}));
+    }
+}
+
+TEST_CASE("different full-size word near a sent track stays eligible") {
+    dk::TargetTracker tracker;
+    CHECK_FALSE(update_tracker(
+        tracker, {boxed_word("HYPERSTONE", {380, 583, 341, 52})}));
+    auto sent = update_tracker(
+        tracker, {boxed_word("HYPERSTONE", {382, 585, 341, 52})});
+    REQUIRE(sent);
+    tracker.mark_sent(*sent);
+
+    CHECK_FALSE(update_tracker(
+        tracker, {boxed_word("BLADEMAIL", {390, 590, 315, 52})}));
+    const auto distinct = update_tracker(
+        tracker, {boxed_word("BLADEMAIL", {394, 594, 315, 52})});
+    REQUIRE(distinct);
+    CHECK(distinct->normalized_text == "BLADEMAIL");
+}
+
+TEST_CASE("same word unlocks after fifteen completely missing frames") {
+    dk::TargetTracker tracker;
+    CHECK_FALSE(update_tracker(tracker, {word("BANE", 100)}));
+    auto ready = update_tracker(tracker, {word("BANE", 150)});
+    REQUIRE(ready);
+    tracker.mark_sent(*ready);
+
+    for (int frame = 0; frame < 15; ++frame) {
+        CHECK_FALSE(update_tracker(tracker, {}));
+    }
     CHECK_FALSE(update_tracker(tracker, {word("BANE", 100)}));
     CHECK(update_tracker(tracker, {word("BANE", 150)}));
 }

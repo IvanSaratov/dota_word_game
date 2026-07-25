@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 
 namespace dk {
 namespace {
@@ -21,6 +22,28 @@ bool compatible_size(const TextCandidate& left, const TextCandidate& right) {
            ratio_in_range(left.bounds.height, right.bounds.height);
 }
 
+std::int64_t area(const Box& box) noexcept {
+    return static_cast<std::int64_t>(box.width) * box.height;
+}
+
+bool center_inside_expanded(
+    const Box& candidate, const Box& retained, float expansion) noexcept {
+    return candidate.center_x() >= retained.x - expansion &&
+           candidate.center_x() <= retained.right() + expansion &&
+           candidate.center_y() >= retained.y - expansion &&
+           candidate.center_y() <= retained.bottom() + expansion;
+}
+
+bool is_fragment(
+    const TextCandidate& candidate, const TextCandidate& sent,
+    float expansion) noexcept {
+    const auto candidate_area = area(candidate.bounds);
+    const auto sent_area = area(sent.bounds);
+    return candidate_area > 0 && sent_area > 0 &&
+           candidate_area * 100 <= sent_area * 65 &&
+           center_inside_expanded(candidate.bounds, sent.bounds, expansion);
+}
+
 }  // namespace
 
 TargetTracker::TargetTracker(TrackerConfig config) : config_(config) {}
@@ -36,6 +59,11 @@ std::optional<TextCandidate> TargetTracker::update(std::span<const TextCandidate
     for (std::size_t track_index = 0; track_index < tracks_.size(); ++track_index) {
         for (std::size_t candidate_index = 0; candidate_index < candidates.size();
              ++candidate_index) {
+            if (tracks_[track_index].sent &&
+                tracks_[track_index].value.normalized_text !=
+                    candidates[candidate_index].normalized_text) {
+                continue;
+            }
             const auto distance = center_distance(
                 tracks_[track_index].value, candidates[candidate_index]);
             if (distance <= config_.max_center_distance_px &&
@@ -74,6 +102,71 @@ std::optional<TextCandidate> TargetTracker::update(std::span<const TextCandidate
         } else {
             track.value = candidate;
             track.seen_frames = 1;
+        }
+    }
+
+    const auto consume_for_sent_track =
+        [&](std::size_t track_index, std::size_t candidate_index,
+            bool refresh_full_bounds) {
+            auto& track = tracks_[track_index];
+            matched_candidates[candidate_index] = true;
+            if (!matched_tracks[track_index]) {
+                matched_tracks[track_index] = true;
+                track.missing_frames = 0;
+            }
+            if (refresh_full_bounds) {
+                track.value.bounds = candidates[candidate_index].bounds;
+            }
+        };
+
+    for (std::size_t candidate_index = 0; candidate_index < candidates.size();
+         ++candidate_index) {
+        if (matched_candidates[candidate_index]) {
+            continue;
+        }
+
+        std::optional<std::size_t> closest_track;
+        auto closest_distance = 0.0F;
+        for (std::size_t track_index = 0; track_index < tracks_.size(); ++track_index) {
+            const auto& track = tracks_[track_index];
+            if (!track.sent ||
+                track.value.normalized_text != candidates[candidate_index].normalized_text) {
+                continue;
+            }
+            const auto distance = center_distance(track.value, candidates[candidate_index]);
+            if (!closest_track || distance < closest_distance) {
+                closest_track = track_index;
+                closest_distance = distance;
+            }
+        }
+        if (closest_track) {
+            consume_for_sent_track(*closest_track, candidate_index, true);
+        }
+    }
+
+    for (std::size_t candidate_index = 0; candidate_index < candidates.size();
+         ++candidate_index) {
+        if (matched_candidates[candidate_index]) {
+            continue;
+        }
+
+        std::optional<std::size_t> closest_track;
+        auto closest_distance = 0.0F;
+        for (std::size_t track_index = 0; track_index < tracks_.size(); ++track_index) {
+            const auto& track = tracks_[track_index];
+            if (!track.sent || !is_fragment(
+                                   candidates[candidate_index], track.value,
+                                   config_.max_center_distance_px)) {
+                continue;
+            }
+            const auto distance = center_distance(track.value, candidates[candidate_index]);
+            if (!closest_track || distance < closest_distance) {
+                closest_track = track_index;
+                closest_distance = distance;
+            }
+        }
+        if (closest_track) {
+            consume_for_sent_track(*closest_track, candidate_index, false);
         }
     }
 
