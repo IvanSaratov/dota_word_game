@@ -78,6 +78,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cpack --preset windows-release
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cpack --preset windows-installer
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Upload CTest log
         if: always()
@@ -140,17 +142,115 @@ jobs:
           }
           Push-Location $extractRoot
           try {
-            & .\dota_keyboard.exe --check-install
-            if ($LASTEXITCODE -ne 0) {
-              throw "dota_keyboard.exe --check-install exited with $LASTEXITCODE."
+            $checkOutput = @(& .\dota_keyboard.exe --check-install 2>&1)
+            $checkExitCode = $LASTEXITCODE
+            $checkOutput | ForEach-Object { Write-Host $_ }
+            if ($checkExitCode -ne 0) {
+              throw "dota_keyboard.exe --check-install exited with $checkExitCode."
+            }
+            if ($checkOutput -match 'Schema error: Trying to register schema') {
+              throw 'dota_keyboard.exe emitted the ONNX Runtime schema registration flood.'
             }
           } finally {
             Pop-Location
           }
 
-      - name: Upload validated ZIP
+      - name: Validate installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installer = @(
+            Get-ChildItem -Path build/windows-release `
+              -Filter 'DotaKeyboardSetup-*-windows-x64.exe' -File
+          )
+          if ($installer.Count -ne 1) {
+            throw "Expected exactly one installer EXE, found $($installer.Count)."
+          }
+          $installRoot = Join-Path $env:RUNNER_TEMP "dota-keyboard-installer-smoke-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
+          New-Item -ItemType Directory -Path $installRoot | Out-Null
+          $process = Start-Process -FilePath $installer[0].FullName -Wait -PassThru `
+            -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART',
+                          "/DIR=$installRoot"
+          if ($process.ExitCode -ne 0) {
+            throw "Installer exited with $($process.ExitCode)."
+          }
+          $dllNames = @(
+            Get-ChildItem -Path $installRoot -Recurse -File -Filter '*.dll' |
+              ForEach-Object { $_.Name.ToLowerInvariant() }
+          )
+          $forbiddenDllNames = @(
+            'kernel32.dll', 'user32.dll', 'gdi32.dll', 'advapi32.dll',
+            'd3d11.dll', 'dxgi.dll', 'setupapi.dll', 'dbghelp.dll', 'ucrtbase.dll'
+          )
+          $forbiddenDlls = $dllNames | Where-Object {
+            $_ -in $forbiddenDllNames -or
+            $_ -like 'api-ms-*.dll' -or
+            $_ -like 'ext-ms-*.dll'
+          }
+          if ($forbiddenDlls) {
+            throw "Installer contains forbidden Windows system DLLs: $($forbiddenDlls -join ', ')"
+          }
+          foreach ($relativePath in @(
+            'dota_keyboard.exe',
+            'assets/models/en_PP-OCRv5_rec_mobile_infer.onnx',
+            'assets/models/ppocrv5_en_dict.txt',
+            'config.json',
+            'README.ru.md'
+          )) {
+            if (-not (Test-Path (Join-Path $installRoot $relativePath) -PathType Leaf)) {
+              throw "Installer is missing $relativePath."
+            }
+          }
+          foreach ($dllPattern in @('onnxruntime.dll', 'opencv_core*.dll', 'vcruntime140*.dll', 'msvcp140*.dll')) {
+            if (-not (Get-ChildItem -Path $installRoot -Filter $dllPattern -File)) {
+              throw "Installer is missing runtime dependency matching $dllPattern."
+            }
+          }
+          $forbiddenFiles = Get-ChildItem -Path $installRoot -Recurse -File |
+            Where-Object {
+              $_.Extension -in @('.c', '.cc', '.cpp', '.h', '.hpp', '.py') -or
+              $_.FullName -match '[\\/](tests?|vcpkg_installed)[\\/]'
+            }
+          if ($forbiddenFiles) {
+            throw "Installer contains forbidden source/test/Python files: $($forbiddenFiles.FullName -join ', ')"
+          }
+          Push-Location $installRoot
+          try {
+            $checkOutput = @(& .\dota_keyboard.exe --check-install 2>&1)
+            $checkExitCode = $LASTEXITCODE
+            $checkOutput | ForEach-Object { Write-Host $_ }
+            if ($checkExitCode -ne 0) {
+              throw "Installed dota_keyboard.exe --check-install exited with $checkExitCode."
+            }
+            if ($checkOutput -match 'Schema error: Trying to register schema') {
+              throw 'Installed dota_keyboard.exe emitted the ONNX Runtime schema registration flood.'
+            }
+          } finally {
+            Pop-Location
+          }
+          $uninstaller = Join-Path $installRoot 'unins000.exe'
+          if (-not (Test-Path $uninstaller -PathType Leaf)) {
+            throw 'Installer did not create unins000.exe.'
+          }
+          $process = Start-Process -FilePath $uninstaller -Wait -PassThru `
+            -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART'
+          if ($process.ExitCode -ne 0) {
+            throw "Uninstaller exited with $($process.ExitCode)."
+          }
+          if (Test-Path (Join-Path $installRoot 'dota_keyboard.exe') -PathType Leaf) {
+            throw 'Uninstaller left dota_keyboard.exe behind.'
+          }
+
+      - name: Upload validated portable ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: dota-keyboard-windows-x64
+          name: dota-keyboard-windows-x64-portable
           if-no-files-found: error
           path: build/windows-release/dota-keyboard-*-windows-x64.zip
+
+      - name: Upload validated installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: dota-keyboard-windows-x64-installer
+          if-no-files-found: error
+          path: build/windows-release/DotaKeyboardSetup-*-windows-x64.exe

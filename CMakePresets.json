@@ -48,6 +48,12 @@
       "configurePreset": "windows-release",
       "configurations": ["Release"],
       "generators": ["ZIP"]
+    },
+    {
+      "name": "windows-installer",
+      "configurePreset": "windows-release",
+      "configurations": ["Release"],
+      "generators": ["INNOSETUP"]
     }
   ]
 }
