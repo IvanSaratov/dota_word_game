@@ -35,6 +35,13 @@ jobs:
           }
           "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" >> $env:GITHUB_ENV
           New-Item -ItemType Directory -Force -Path $env:VCPKG_DEFAULT_BINARY_CACHE | Out-Null
+          $baseline = (Get-Content vcpkg.json -Raw | ConvertFrom-Json).'builtin-baseline'
+          git -C $env:VCPKG_INSTALLATION_ROOT fetch --no-tags --depth=1 origin $baseline
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git -C $env:VCPKG_INSTALLATION_ROOT cat-file -e "$($baseline):versions/baseline.json"
+          if ($LASTEXITCODE -ne 0) {
+            throw "The vcpkg baseline $baseline does not contain versions/baseline.json."
+          }
 
       - name: Fetch pinned OCR assets
         run: pwsh -NoProfile -File scripts/fetch-models.ps1
