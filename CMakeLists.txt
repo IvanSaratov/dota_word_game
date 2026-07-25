@@ -98,7 +98,7 @@ if(WIN32)
   install(TARGETS dota_keyboard
     RUNTIME_DEPENDENCIES
       DIRECTORIES ${DK_RUNTIME_DEPENDENCY_DIRS}
-      PRE_EXCLUDE_REGEXES "api-ms-win-.*" "ext-ms-win-.*"
+      PRE_EXCLUDE_REGEXES "api-ms-win-.*" "ext-ms-.*"
       POST_EXCLUDE_REGEXES ".*/[Ww]indows/[Ss]ystem32/.*"
     RUNTIME DESTINATION ".")
   install(FILES

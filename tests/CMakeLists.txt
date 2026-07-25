@@ -47,6 +47,11 @@ target_compile_definitions(config_source_test PRIVATE
   DK_CONFIG_SOURCE_PATH="${PROJECT_SOURCE_DIR}/src/config.cpp")
 add_test(NAME config_source_test COMMAND config_source_test)
 
+add_executable(packaging_cmake_source_test packaging_cmake_source_test.cpp)
+target_compile_definitions(packaging_cmake_source_test PRIVATE
+  DK_ROOT_CMAKE_PATH="${PROJECT_SOURCE_DIR}/CMakeLists.txt")
+add_test(NAME packaging_cmake_source_test COMMAND packaging_cmake_source_test)
+
 add_executable(input_sink_portable_test input_sink_portable_test.cpp)
 target_include_directories(input_sink_portable_test PRIVATE "${PROJECT_SOURCE_DIR}/include")
 add_test(NAME input_sink_portable_test COMMAND input_sink_portable_test)
