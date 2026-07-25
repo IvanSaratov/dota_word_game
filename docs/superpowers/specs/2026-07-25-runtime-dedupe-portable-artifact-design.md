@@ -26,10 +26,21 @@ the workflow currently uploads the CPack portable ZIP as its payload.
 One game word can incorrectly appear in Cyrillic because of a confirmed game
 bug. The user approved ignoring Cyrillic instead of switching keyboard layouts.
 
+A second dry-run processed 1,156 frames at 12.560 ms mean latency and exposed
+one remaining target-word fragment: sent `ABADDON` was followed three frames
+later by stable `ADDON`. The crop occupied 74.1% of the retained full-word
+area, so it correctly fell outside the existing 65% geometric-only rule even
+though its normalized text was a strict substring of the canonical word.
+
+The same run also contained `ALLPICK` and `ALL` from a game notification. The
+user classified those observations as an exception for evaluating that run
+only. They must not become a product blocklist or a general OCR exception.
+
 ## Goals
 
 - Emit at most one input proposal for one visible moving word.
-- Suppress small OCR fragments derived from an already-sent word.
+- Suppress geometric and strict-substring OCR fragments derived from an
+  already-sent word.
 - Allow the same normalized English word to be selected again after the old
   target has genuinely disappeared.
 - Reject OCR text containing Cyrillic, including mixed Latin/Cyrillic text.
@@ -53,14 +64,16 @@ bug. The user approved ignoring Cyrillic instead of switching keyboard layouts.
 
 ## Considered approaches
 
-### 1. Retained sent tracks with fragment suppression — selected
+### 1. Retained sent tracks with geometric and substring suppression — selected
 
 Retain sent tracks through realistic short detector gaps, reacquire exact text
-while the retained track is alive, and consume substantially smaller candidates
-near the last full-word bounds as fragments.
+while the retained track is alive, consume substantially smaller candidates
+near the last full-word bounds, and consume spatially related strict substrings
+of the canonical text.
 
-This directly addresses both failure modes observed in the log while preserving
-the ability to accept the same word after the retained track expires.
+This directly addresses the duplicate and fragment modes observed across both
+logs while preserving the ability to accept the same word after the retained
+track expires.
 
 ### 2. Global text cooldown
 
@@ -97,7 +110,12 @@ ownership rules:
    the candidate is consumed by that sent track even when a detector gap caused
    a position jump. The sent track's full-size bounds and missing count are
    refreshed.
-2. Otherwise, a candidate is consumed as a fragment when its area is at most
+2. Otherwise, a candidate is consumed as a fragment when its normalized text
+   is a strict contiguous substring of the live sent track's canonical text and
+   its center lies inside the retained full-size bounds expanded on every side
+   by `max_center_distance_px`. This rule has no area ceiling, so it covers
+   large but unambiguous crops such as `ADDON` from `ABADDON`.
+3. Otherwise, a candidate is consumed as a fragment when its area is at most
    65% of a live sent track's last full-size area and its center lies inside
    those bounds expanded on every side by `max_center_distance_px`.
 
@@ -108,9 +126,10 @@ qualify for sent ownership and therefore remains eligible for ordinary
 association.
 
 A consumed fragment never replaces canonical text or shrinks the retained
-full-size bounds. It only keeps the sent track alive. This covers the observed
-prefix, suffix, middle, and one-character OCR-error fragments without relying
-on string similarity.
+full-size bounds. It only keeps the sent track alive. The substring rule covers
+large unambiguous prefix, suffix, and middle crops; the existing geometric rule
+continues to cover smaller OCR-error fragments that are not literal
+substrings.
 
 Normal unsent tracks still require `confirm_frames` consecutive matching text
 observations. Unmatched unsent tracks reset their confirmation streak exactly
@@ -121,11 +140,13 @@ The accepted trade-offs are:
 - a simultaneous second instance with exactly the same normalized text is
   suppressed while the first sent track is live;
 - a second candidate substantially smaller than, and spatially overlapping, a
-  sent word is suppressed.
+  sent word is suppressed;
+- a spatially overlapping candidate whose text is a strict substring of a sent
+  word is suppressed even when its area exceeds 65%.
 
-Both choices are safer than duplicate or cropped input. Suppression ends after
-15 consecutive frames contain neither the canonical word nor a spatially
-related fragment.
+These choices are safer than duplicate or cropped input. Suppression ends
+after 15 consecutive frames contain neither the canonical word nor a
+spatially related fragment.
 
 ## Cyrillic rejection
 
@@ -141,6 +162,24 @@ Therefore:
 
 The application already drops normalized strings shorter than two characters,
 so an empty Cyrillic result cannot reach tracking or input dispatch.
+
+## Live-input validation
+
+No second mode variable or command-line override is added. The existing
+`live_input` JSON field remains the single source of truth:
+
+- every packaged `config.json` keeps the safe default `"live_input": false`;
+- the user explicitly changes it to `true` in the extracted or installed
+  configuration for the next real-input test;
+- startup must display `LIVE INPUT ENABLED`, and F8 must display
+  `RUNNING (LIVE INPUT)` before any input is expected;
+- successful dispatch remains visible in the log as `Input sent for <WORD>`.
+
+The live-input acceptance run verifies both sides of the integration: the log
+must show one successful dispatch per target, and the game must visibly accept
+the typed word. F8 remains the immediate stop control. Notification text such
+as the observed `ALL PICK` is not globally ignored; the capture region should
+exclude unrelated HUD or notification areas where practical.
 
 ## Portable and installer artifacts
 
@@ -176,8 +215,11 @@ Tracker regression tests will reproduce the dry-run patterns:
 - `HYPE` near sent `HYPERSTONE` is consumed;
 - `EMA` near sent `BLADEMAIL` is consumed;
 - `RN` and `DIH` inside sent `BLOODTHORN` are consumed;
+- `ADDON` inside sent `ABADDON` is consumed even though its area exceeds 65%;
 - sent `BANE` owns later `BANE` observations before a competing unsent
   `DECOY` track can claim them spatially;
+- a different spatially overlapping word that is neither a strict substring
+  nor below the 65% area ceiling remains eligible;
 - a distinct full-size nearby word remains eligible;
 - the same canonical word becomes eligible after 15 consecutive missing
   frames.
