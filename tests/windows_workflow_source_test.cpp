@@ -105,6 +105,28 @@ bool require_vcpkg_cache_contracts(
     return valid;
 }
 
+bool require_flat_portable_artifact(
+    const std::string& source, const char* workflow_name) {
+    bool valid = true;
+    valid &= require_text(
+        source,
+        "$extractRoot = Join-Path $env:GITHUB_WORKSPACE "
+        "'build/windows-release/validated-portable'",
+        "stable validated portable extraction directory");
+    valid &= require_text(
+        source,
+        "path: build/windows-release/validated-portable",
+        "flat validated portable artifact payload");
+    if (source.find(
+            "path: build/windows-release/dota-keyboard-*-windows-x64.zip") !=
+        std::string::npos) {
+        std::cerr << workflow_name
+                  << " must not upload the CPack ZIP inside an Actions ZIP\n";
+        valid = false;
+    }
+    return valid;
+}
+
 }  // namespace
 
 int main() {
@@ -119,6 +141,8 @@ int main() {
     valid &= require_smoke_contracts(release_source, "release.yml");
     valid &= require_vcpkg_cache_contracts(windows_source, "windows.yml");
     valid &= require_vcpkg_cache_contracts(release_source, "release.yml");
+    valid &= require_flat_portable_artifact(windows_source, "windows.yml");
+    valid &= require_flat_portable_artifact(release_source, "release.yml");
     valid &= require_text(
         release_source, "--generate-notes", "generated GitHub release notes");
     valid &= require_text(

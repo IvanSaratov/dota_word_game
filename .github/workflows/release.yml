@@ -118,7 +118,10 @@ jobs:
           if ($zip.Count -ne 1) {
             throw "Expected exactly one package ZIP, found $($zip.Count)."
           }
-          $extractRoot = Join-Path $env:RUNNER_TEMP "dota-keyboard-package-smoke-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
+          $extractRoot = Join-Path $env:GITHUB_WORKSPACE 'build/windows-release/validated-portable'
+          if (Test-Path -LiteralPath $extractRoot) {
+            Remove-Item -LiteralPath $extractRoot -Recurse -Force
+          }
           New-Item -ItemType Directory -Path $extractRoot | Out-Null
           Expand-Archive -LiteralPath $zip[0].FullName -DestinationPath $extractRoot
           $dllNames = @(
@@ -341,12 +344,12 @@ jobs:
           Set-Content -LiteralPath $checksumPath -Encoding ascii `
             -Value "$($hash.Hash)  $($installer[0].Name)"
 
-      - name: Upload validated portable ZIP
+      - name: Upload validated portable files
         uses: actions/upload-artifact@v4
         with:
           name: dota-keyboard-windows-x64-portable
           if-no-files-found: error
-          path: build/windows-release/dota-keyboard-*-windows-x64.zip
+          path: build/windows-release/validated-portable
 
       - name: Upload validated release assets
         uses: actions/upload-artifact@v4
