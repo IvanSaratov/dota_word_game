@@ -83,10 +83,9 @@ if(WIN32)
   # Keep the portable ZIP self-contained: CMake resolves the DLLs linked by the
   # executable and installs them next to the executable.  The vcpkg directory
   # is required for dependencies that are not copied into the build directory.
-  # InstallRequiredSystemLibraries adds the MSVC/UCRT runtime DLLs separately;
-  # they are not guaranteed to appear in the executable dependency scan.
+  # InstallRequiredSystemLibraries adds the MSVC runtime DLLs separately; they
+  # are not guaranteed to appear in the executable dependency scan.
   set(CMAKE_INSTALL_SYSTEM_RUNTIME_DESTINATION ".")
-  set(CMAKE_INSTALL_UCRT_LIBRARIES TRUE)
   include(InstallRequiredSystemLibraries)
 
   set(DK_RUNTIME_DEPENDENCY_DIRS)
@@ -98,8 +97,12 @@ if(WIN32)
   install(TARGETS dota_keyboard
     RUNTIME_DEPENDENCIES
       DIRECTORIES ${DK_RUNTIME_DEPENDENCY_DIRS}
-      PRE_EXCLUDE_REGEXES "api-ms-win-.*" "ext-ms-.*"
-      POST_EXCLUDE_REGEXES ".*/[Ww]indows/[Ss]ystem32/.*"
+      PRE_EXCLUDE_REGEXES
+        "[Aa][Pp][Ii]-[Mm][Ss]-.*"
+        "[Ee][Xx][Tt]-[Mm][Ss]-.*"
+      POST_EXCLUDE_REGEXES
+        ".*[\\\\/][Ww][Ii][Nn][Dd][Oo][Ww][Ss][\\\\/][Ss][Yy][Ss][Tt][Ee][Mm]32[\\\\/].*"
+        ".*[\\\\/][Ww][Ii][Nn][Dd][Oo][Ww][Ss][\\\\/][Ss][Yy][Ss][Ww][Oo][Ww]64[\\\\/].*"
     RUNTIME DESTINATION ".")
   install(FILES
     assets/models/en_PP-OCRv5_rec_mobile_infer.onnx

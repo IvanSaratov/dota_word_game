@@ -16,12 +16,28 @@ int main() {
         return 1;
     }
 
-    if (source.find("\"ext-ms-.*\"") == std::string::npos) {
-        std::cerr << "all ext-ms Windows API-set dependencies must be excluded\n";
+    if (source.find(
+            R"(".*[\\\\/][Ww][Ii][Nn][Dd][Oo][Ww][Ss][\\\\/][Ss][Yy][Ss][Tt][Ee][Mm]32[\\\\/].*")") ==
+        std::string::npos) {
+        std::cerr << "System32 dependencies must be excluded with either path separator\n";
         return 1;
     }
-    if (source.find("\"ext-ms-win-.*\"") != std::string::npos) {
-        std::cerr << "the ext-ms exclusion must not be limited to ext-ms-win\n";
+    if (source.find(
+            R"(".*[\\\\/][Ww][Ii][Nn][Dd][Oo][Ww][Ss][\\\\/][Ss][Yy][Ss][Ww][Oo][Ww]64[\\\\/].*")") ==
+        std::string::npos) {
+        std::cerr << "SysWOW64 dependencies must be excluded with either path separator\n";
+        return 1;
+    }
+    if (source.find(R"("[Aa][Pp][Ii]-[Mm][Ss]-.*")") == std::string::npos) {
+        std::cerr << "all api-ms Windows API-set dependencies must be excluded case-insensitively\n";
+        return 1;
+    }
+    if (source.find(R"("[Ee][Xx][Tt]-[Mm][Ss]-.*")") == std::string::npos) {
+        std::cerr << "all ext-ms Windows API-set dependencies must be excluded case-insensitively\n";
+        return 1;
+    }
+    if (source.find("set(CMAKE_INSTALL_UCRT_LIBRARIES TRUE)") != std::string::npos) {
+        std::cerr << "Windows UCRT DLL collection must not be forced\n";
         return 1;
     }
     return 0;
