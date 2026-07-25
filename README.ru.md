@@ -5,15 +5,43 @@
 обязательно проверьте сухой прогон: это защищает чат, HUD и другие элементы от
 непреднамеренного ввода.
 
+## Установка
+
+Рекомендуемый вариант — `DotaKeyboardSetup-*-windows-x64.exe`. Установщик
+работает для текущего пользователя, не запрашивает права администратора и по
+умолчанию размещает программу в
+`%LOCALAPPDATA%\Programs\DotaKeyboard`. После установки запускайте
+**Dota Keyboard** через меню «Пуск».
+
+Первая версия не подписана сертификатом для подписи кода, поэтому Windows
+SmartScreen может показать предупреждение о неизвестном издателе. Сверьте имя
+скачанного файла перед запуском.
+
+В GitHub Actions доступны два варианта:
+
+- `dota-keyboard-windows-x64-installer` — рекомендуемый установщик; GitHub
+  скачивает внешний ZIP, внутри которого находится один установочный EXE;
+- `dota-keyboard-windows-x64-portable` — переносимые файлы без установки;
+  внешний ZIP GitHub уже содержит EXE, DLL, модели и конфиг, дополнительного
+  вложенного ZIP больше нет.
+
+На странице tagged GitHub Release установщик и контрольная сумма скачиваются
+напрямую, без ZIP-обёртки Actions.
+
+Переносимые файлы предназначены для диагностики и ручного запуска: распакуйте
+архив целиком в отдельную папку и не перемещайте из неё отдельно
+`dota_keyboard.exe`, `assets/models`, `config.json` или DLL.
+
+В обоих вариантах поставляемый `config.json` начинает работу в безопасном
+режиме: `"live_input": false`.
+
 ## Запуск и калибровка
 
-1. Распакуйте `dota-keyboard-*-windows-x64.zip` в отдельную папку. Не
-   перемещайте `dota_keyboard.exe`, `assets/models`, `config.json` и DLL из
-   этой папки.
-2. Переключите игру в безрамочный оконный режим (*borderless windowed*).
-3. Запустите `dota_keyboard.exe` с тем же уровнем прав, что и игра: оба обычные
-   либо оба запущены от администратора.
-4. Переведите фокус в игру, нажмите **F7** и мышью обведите только область
+1. Переключите игру в безрамочный оконный режим (*borderless windowed*).
+2. Запустите **Dota Keyboard** через меню «Пуск» с тем же уровнем прав, что и
+   игра: оба обычные либо оба запущены от администратора. Для переносимого
+   варианта вместо ярлыка запустите `dota_keyboard.exe` из распакованной папки.
+3. Переведите фокус в игру, нажмите **F7** и мышью обведите только область
    мини-игры. Не включайте в рамку HUD, чат, микро-подписи и соседний монитор.
    Калибровка сохраняется в `config.json`.
 
@@ -38,12 +66,14 @@
 
 ## Самостоятельная сборка на Windows 11 x64
 
-Готовый ZIP удобнее скачивать из артефактов GitHub Actions. Для локальной
-сборки установите:
+Готовый установщик для пользователей скачивайте со страницы GitHub Releases.
+Артефакты GitHub Actions предназначены для проверки конкретных запусков CI.
+Для локальной сборки установите:
 
 - Visual Studio 2022 с workload **Desktop development with C++** и Windows SDK;
 - Git;
 - CMake 3.28 или новее;
+- Inno Setup 6 или новее;
 - PowerShell 7 (`pwsh`);
 - полную копию [vcpkg](https://github.com/microsoft/vcpkg), клонированную через
   Git, а не скачанную как ZIP.
@@ -72,13 +102,32 @@ cmake --build --preset windows-release
 ctest --preset windows-release --output-on-failure
 cmake --install .\build\windows-release --config Release --prefix .\dist
 cpack --preset windows-release
+cpack --preset windows-installer
 ```
 
 Первая сборка может занять много времени: vcpkg компилирует OpenCV и ONNX
 Runtime. Не удаляйте `build\windows-release` и стандартный бинарный кэш vcpkg
 `%LOCALAPPDATA%\vcpkg\archives` — повторные сборки с тем же `vcpkg.json` будут
-быстрее. Готовый архив появится как
-`build\windows-release\dota-keyboard-*-windows-x64.zip`.
+быстрее. Рекомендуемый установщик появится как
+`build\windows-release\DotaKeyboardSetup-*-windows-x64.exe`, а технический
+архив — как `build\windows-release\dota-keyboard-*-windows-x64.zip`.
+
+## Выпуск релиза
+
+Сопровождающий выпускает релиз только из актуальной ветки `main`:
+
+```bash
+git switch main
+git pull --ff-only
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+Тег обязан точно соответствовать версии в
+`project(dota_keyboard VERSION ...)` из корневого `CMakeLists.txt` и стоять на
+коммите, который уже присутствует в `origin/main`. После проверки тега GitHub
+Actions публикует установщик и файл с его SHA256; технический ZIP остаётся
+артефактом запуска workflow.
 
 ## Неполадки
 

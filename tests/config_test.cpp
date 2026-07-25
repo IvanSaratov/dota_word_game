@@ -24,6 +24,7 @@ TEST_CASE("default configuration is safe") {
     CHECK_FALSE(config.live_input);
     CHECK(config.min_ocr_confidence == Catch::Approx(0.80F));
     CHECK(config.tracker.confirm_frames == 2);
+    CHECK(config.tracker.unlock_missing_frames == 15);
     CHECK(config.hotkeys.calibrate == 0x76);  // F7
     CHECK(config.hotkeys.toggle == 0x77);     // F8
 }

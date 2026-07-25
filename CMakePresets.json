@@ -9,7 +9,8 @@
       "architecture": "x64",
       "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
       "cacheVariables": {
-        "VCPKG_TARGET_TRIPLET": "x64-windows",
+        "VCPKG_TARGET_TRIPLET": "x64-windows-dota",
+        "VCPKG_OVERLAY_TRIPLETS": "${sourceDir}/cmake/triplets",
         "BUILD_TESTING": "ON"
       }
     },
@@ -48,6 +49,12 @@
       "configurePreset": "windows-release",
       "configurations": ["Release"],
       "generators": ["ZIP"]
+    },
+    {
+      "name": "windows-installer",
+      "configurePreset": "windows-release",
+      "configurations": ["Release"],
+      "generators": ["INNOSETUP"]
     }
   ]
 }

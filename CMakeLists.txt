@@ -83,10 +83,9 @@ if(WIN32)
   # Keep the portable ZIP self-contained: CMake resolves the DLLs linked by the
   # executable and installs them next to the executable.  The vcpkg directory
   # is required for dependencies that are not copied into the build directory.
-  # InstallRequiredSystemLibraries adds the MSVC/UCRT runtime DLLs separately;
-  # they are not guaranteed to appear in the executable dependency scan.
+  # InstallRequiredSystemLibraries adds the MSVC runtime DLLs separately; they
+  # are not guaranteed to appear in the executable dependency scan.
   set(CMAKE_INSTALL_SYSTEM_RUNTIME_DESTINATION ".")
-  set(CMAKE_INSTALL_UCRT_LIBRARIES TRUE)
   include(InstallRequiredSystemLibraries)
 
   set(DK_RUNTIME_DEPENDENCY_DIRS)
@@ -98,8 +97,12 @@ if(WIN32)
   install(TARGETS dota_keyboard
     RUNTIME_DEPENDENCIES
       DIRECTORIES ${DK_RUNTIME_DEPENDENCY_DIRS}
-      PRE_EXCLUDE_REGEXES "api-ms-win-.*" "ext-ms-.*"
-      POST_EXCLUDE_REGEXES ".*/[Ww]indows/[Ss]ystem32/.*"
+      PRE_EXCLUDE_REGEXES
+        "[Aa][Pp][Ii]-[Mm][Ss]-.*"
+        "[Ee][Xx][Tt]-[Mm][Ss]-.*"
+      POST_EXCLUDE_REGEXES
+        ".*[\\\\/][Ww][Ii][Nn][Dd][Oo][Ww][Ss][\\\\/][Ss][Yy][Ss][Tt][Ee][Mm]32[\\\\/].*"
+        ".*[\\\\/][Ww][Ii][Nn][Dd][Oo][Ww][Ss][\\\\/][Ss][Yy][Ss][Ww][Oo][Ww]64[\\\\/].*"
     RUNTIME DESTINATION ".")
   install(FILES
     assets/models/en_PP-OCRv5_rec_mobile_infer.onnx
@@ -109,7 +112,19 @@ if(WIN32)
   install(FILES README.ru.md DESTINATION ".")
 
   set(CPACK_GENERATOR "ZIP")
-  set(CPACK_PACKAGE_FILE_NAME "dota-keyboard-${PROJECT_VERSION}-windows-x64")
+  set(CPACK_PACKAGE_NAME "Dota Keyboard")
+  set(CPACK_PACKAGE_VENDOR "IvanSaratov")
+  set(CPACK_PACKAGE_INSTALL_DIRECTORY "DotaKeyboard")
+  set(CPACK_PACKAGE_EXECUTABLES "dota_keyboard" "Dota Keyboard")
+  set(CPACK_PROJECT_CONFIG_FILE
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/PackageProjectConfig.cmake")
+  set(CPACK_INNOSETUP_ARCHITECTURE "x64")
+  set(CPACK_INNOSETUP_INSTALL_ROOT "{localappdata}/Programs")
+  set(CPACK_INNOSETUP_SETUP_PrivilegesRequired "lowest")
+  set(CPACK_INNOSETUP_USE_MODERN_WIZARD ON)
+  set(CPACK_INNOSETUP_LANGUAGES "english;russian")
+  set(CPACK_INNOSETUP_IGNORE_LICENSE_PAGE ON)
+  set(CPACK_INNOSETUP_RUN_EXECUTABLES "dota_keyboard")
   set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY OFF)
   include(CPack)
 endif()

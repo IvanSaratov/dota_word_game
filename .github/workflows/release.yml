@@ -1,22 +1,43 @@
-name: Windows package
+name: Windows release
 
 on:
   push:
-  pull_request:
-  workflow_dispatch:
-
-permissions:
-  contents: read
+    tags:
+      - 'v*'
 
 jobs:
-  build-test-package:
+  build-release:
     runs-on: windows-2022
+    permissions:
+      contents: read
     env:
       VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}\.vcpkg-binary-cache
       VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}\.vcpkg-binary-cache,readwrite
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch origin/main
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Test release policy
+        run: pwsh -NoProfile -File scripts/test-release-policy.ps1
+
+      - name: Validate tag and main ancestry
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          pwsh -NoProfile -File scripts/validate-release.ps1 `
+            -Tag $env:GITHUB_REF_NAME `
+            -Commit $env:GITHUB_SHA `
+            -MainRef refs/remotes/origin/main
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Restore vcpkg binary cache
         id: vcpkg-cache
@@ -85,7 +106,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: dota-keyboard-windows-ctest-log
+          name: dota-keyboard-release-ctest-log
           if-no-files-found: warn
           path: build/windows-release/ctest-release.log
 
@@ -307,6 +328,22 @@ jobs:
             throw 'Uninstaller left its HKCU uninstall registration behind.'
           }
 
+      - name: Create installer checksum
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installer = @(
+            Get-ChildItem -Path build/windows-release `
+              -Filter 'DotaKeyboardSetup-*-windows-x64.exe' -File
+          )
+          if ($installer.Count -ne 1) {
+            throw "Expected exactly one installer EXE, found $($installer.Count)."
+          }
+          $hash = Get-FileHash -LiteralPath $installer[0].FullName -Algorithm SHA256
+          $checksumPath = "$($installer[0].FullName).sha256"
+          Set-Content -LiteralPath $checksumPath -Encoding ascii `
+            -Value "$($hash.Hash)  $($installer[0].Name)"
+
       - name: Upload validated portable files
         uses: actions/upload-artifact@v4
         with:
@@ -314,9 +351,46 @@ jobs:
           if-no-files-found: error
           path: build/windows-release/validated-portable
 
-      - name: Upload validated installer
+      - name: Upload validated release assets
         uses: actions/upload-artifact@v4
         with:
-          name: dota-keyboard-windows-x64-installer
+          name: dota-keyboard-windows-x64-release-assets
           if-no-files-found: error
-          path: build/windows-release/DotaKeyboardSetup-*-windows-x64.exe
+          path: |
+            build/windows-release/DotaKeyboardSetup-*-windows-x64.exe
+            build/windows-release/DotaKeyboardSetup-*-windows-x64.exe.sha256
+
+  publish-release:
+    needs: build-release
+    runs-on: windows-2022
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download validated release assets
+        uses: actions/download-artifact@v4
+        with:
+          name: dota-keyboard-windows-x64-release-assets
+          path: release-assets
+
+      - name: Publish GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installer = Get-ChildItem .\release-assets\DotaKeyboardSetup-*-windows-x64.exe -File
+          $checksum = Get-ChildItem .\release-assets\DotaKeyboardSetup-*-windows-x64.exe.sha256 -File
+          if (@($installer).Count -ne 1 -or @($checksum).Count -ne 1) {
+            throw 'Expected exactly one installer and one checksum.'
+          }
+          $releaseNotes = @'
+          > [!WARNING]
+          > The Windows installer is unsigned. Microsoft Defender SmartScreen may warn about an unknown publisher. Verify the installer against the published `.sha256` checksum before running it.
+          '@
+          gh release create $env:GITHUB_REF_NAME `
+            $installer.FullName $checksum.FullName `
+            --verify-tag --generate-notes --notes $releaseNotes `
+            --title $env:GITHUB_REF_NAME
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

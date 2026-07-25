@@ -1,0 +1,7 @@
+if(CPACK_GENERATOR STREQUAL "INNOSETUP")
+  set(CPACK_PACKAGE_FILE_NAME
+    "DotaKeyboardSetup-${CPACK_PACKAGE_VERSION}-windows-x64")
+elseif(CPACK_GENERATOR STREQUAL "ZIP")
+  set(CPACK_PACKAGE_FILE_NAME
+    "dota-keyboard-${CPACK_PACKAGE_VERSION}-windows-x64")
+endif()

@@ -155,6 +155,44 @@ TEST_CASE("app rejects empty and low confidence recognition") {
     CHECK(input.sent.empty());
 }
 
+TEST_CASE("app filters by length after normalizing punctuation") {
+    auto config = dk::AppConfig::defaults();
+    config.live_input = true;
+    FakeFrameSource frames{2};
+    FakeDetector detector{{{10, 60, 100, 30}, {20, 20, 120, 30}}};
+    FakeRecognizer recognizer{{
+        {"-C-", .99F}, {"I/O!", .99F},
+        {"-C-", .99F}, {"I/O!", .99F},
+    }};
+    FakeInputSink input;
+    dk::App app(config, frames, detector, recognizer, input);
+
+    CHECK(app.process_one_frame());
+    CHECK(app.process_one_frame());
+
+    REQUIRE(input.sent.size() == 1);
+    CHECK(input.sent.front() == "IO");
+}
+
+TEST_CASE("app never dispatches mixed Cyrillic OCR") {
+    auto config = dk::AppConfig::defaults();
+    config.live_input = true;
+    FakeFrameSource frames{2};
+    FakeDetector detector{{{30, 200, 240, 48}}};
+    FakeRecognizer recognizer{{
+        {"BLADEМЕЧ", .99F},
+        {"BLADEМЕЧ", .99F},
+    }};
+    FakeInputSink input;
+    dk::App app(config, frames, detector, recognizer, input);
+
+    CHECK(app.process_one_frame());
+    CHECK_FALSE(app.last_result());
+    CHECK(app.process_one_frame());
+    CHECK_FALSE(app.last_result());
+    CHECK(input.sent.empty());
+}
+
 TEST_CASE("blocked or partial input makes process_one_frame request a stop") {
     for (const auto status : {dk::SendStatus::blocked, dk::SendStatus::partial}) {
         auto config = dk::AppConfig::defaults();

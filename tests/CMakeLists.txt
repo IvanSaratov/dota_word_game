@@ -17,6 +17,11 @@ dk_add_test(config_test config_test.cpp)
 dk_add_test(input_sink_test input_sink_test.cpp)
 dk_add_test(app_test app_test.cpp)
 
+add_executable(ocr_logging_source_test ocr_logging_source_test.cpp)
+target_compile_definitions(ocr_logging_source_test PRIVATE
+  DK_OCR_RECOGNIZER_SOURCE_PATH="${PROJECT_SOURCE_DIR}/src/ocr_recognizer.cpp")
+add_test(NAME ocr_logging_source_test COMMAND ocr_logging_source_test)
+
 add_executable(dxgi_capture_source_test dxgi_capture_source_test.cpp)
 target_compile_definitions(dxgi_capture_source_test PRIVATE
   DK_DXGI_CAPTURE_SOURCE_PATH="${PROJECT_SOURCE_DIR}/src/dxgi_capture_win32.cpp")
@@ -49,8 +54,17 @@ add_test(NAME config_source_test COMMAND config_source_test)
 
 add_executable(packaging_cmake_source_test packaging_cmake_source_test.cpp)
 target_compile_definitions(packaging_cmake_source_test PRIVATE
-  DK_ROOT_CMAKE_PATH="${PROJECT_SOURCE_DIR}/CMakeLists.txt")
+  DK_ROOT_CMAKE_PATH="${PROJECT_SOURCE_DIR}/CMakeLists.txt"
+  DK_PACKAGE_PROJECT_CONFIG_PATH="${PROJECT_SOURCE_DIR}/cmake/PackageProjectConfig.cmake"
+  DK_CMAKE_PRESETS_PATH="${PROJECT_SOURCE_DIR}/CMakePresets.json"
+  DK_VCPKG_TRIPLET_PATH="${PROJECT_SOURCE_DIR}/cmake/triplets/x64-windows-dota.cmake")
 add_test(NAME packaging_cmake_source_test COMMAND packaging_cmake_source_test)
+
+add_executable(windows_workflow_source_test windows_workflow_source_test.cpp)
+target_compile_definitions(windows_workflow_source_test PRIVATE
+  DK_WINDOWS_WORKFLOW_PATH="${PROJECT_SOURCE_DIR}/.github/workflows/windows.yml"
+  DK_RELEASE_WORKFLOW_PATH="${PROJECT_SOURCE_DIR}/.github/workflows/release.yml")
+add_test(NAME windows_workflow_source_test COMMAND windows_workflow_source_test)
 
 add_executable(input_sink_portable_test input_sink_portable_test.cpp)
 target_include_directories(input_sink_portable_test PRIVATE "${PROJECT_SOURCE_DIR}/include")

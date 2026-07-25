@@ -23,7 +23,7 @@
   "tracker": {
     "confirm_frames": 2,
     "max_center_distance_px": 90.0,
-    "unlock_missing_frames": 2
+    "unlock_missing_frames": 15
   },
   "hotkeys": {
     "calibrate": 118,
