@@ -19,10 +19,11 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Restore vcpkg binary cache
-        uses: actions/cache@v4
+        id: vcpkg-cache
+        uses: actions/cache/restore@v5
         with:
-          path: ${{ runner.temp }}\vcpkg-binary-cache
-          key: windows-2022-vcpkg-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}
+          path: ${{ github.workspace }}\.vcpkg-binary-cache
+          key: windows-2022-vcpkg-${{ hashFiles('vcpkg.json') }}
           restore-keys: |
             windows-2022-vcpkg-
 
@@ -50,12 +51,24 @@ jobs:
       - name: Fetch pinned OCR assets
         run: pwsh -NoProfile -File scripts/fetch-models.ps1
 
-      - name: Configure, build, test, install, and package
+      - name: Configure project and install dependencies
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           cmake --preset windows-release
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Save vcpkg binary cache
+        if: ${{ always() && steps.vcpkg-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ github.workspace }}\.vcpkg-binary-cache
+          key: windows-2022-vcpkg-${{ hashFiles('vcpkg.json') }}
+
+      - name: Build, test, install, and package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
           cmake --build --preset windows-release
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           ctest --preset windows-release --output-on-failure *>&1 |

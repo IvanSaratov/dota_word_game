@@ -36,6 +36,50 @@
 написать `RUNNING (LIVE INPUT)`. **F8** в любой момент останавливает обработку;
 сначала используйте его, если заметили неверное распознавание.
 
+## Самостоятельная сборка на Windows 11 x64
+
+Готовый ZIP удобнее скачивать из артефактов GitHub Actions. Для локальной
+сборки установите:
+
+- Visual Studio 2022 с workload **Desktop development with C++** и Windows SDK;
+- Git;
+- CMake 3.28 или новее;
+- PowerShell 7 (`pwsh`);
+- полную копию [vcpkg](https://github.com/microsoft/vcpkg), клонированную через
+  Git, а не скачанную как ZIP.
+
+Откройте PowerShell 7 в корне этого репозитория. В примере vcpkg находится в
+`C:\src\vcpkg`; если у вас другой путь, измените только `$VcpkgRoot`.
+
+```powershell
+git clone https://github.com/microsoft/vcpkg.git C:\src\vcpkg
+$VcpkgRoot = 'C:\src\vcpkg'
+$Baseline = (Get-Content .\vcpkg.json -Raw | ConvertFrom-Json).'builtin-baseline'
+git -C $VcpkgRoot fetch --no-tags origin $Baseline
+git -C $VcpkgRoot checkout --detach $Baseline
+& "$VcpkgRoot\bootstrap-vcpkg.bat" -disableMetrics
+$env:VCPKG_ROOT = $VcpkgRoot
+```
+
+Если `C:\src\vcpkg` уже существует, первую команду `git clone` пропустите.
+Затем загрузите закреплённые OCR-файлы, соберите Release, запустите тесты и
+создайте пакет:
+
+```powershell
+pwsh -NoProfile -File .\scripts\fetch-models.ps1
+cmake --preset windows-release
+cmake --build --preset windows-release
+ctest --preset windows-release --output-on-failure
+cmake --install .\build\windows-release --config Release --prefix .\dist
+cpack --preset windows-release
+```
+
+Первая сборка может занять много времени: vcpkg компилирует OpenCV и ONNX
+Runtime. Не удаляйте `build\windows-release` и стандартный бинарный кэш vcpkg
+`%LOCALAPPDATA%\vcpkg\archives` — повторные сборки с тем же `vcpkg.json` будут
+быстрее. Готовый архив появится как
+`build\windows-release\dota-keyboard-*-windows-x64.zip`.
+
 ## Неполадки
 
 | Симптом | Что сделать |
