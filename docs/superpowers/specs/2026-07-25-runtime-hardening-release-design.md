@@ -29,7 +29,7 @@ The work contains four coordinated deliverables:
 
 1. Spatially persistent target locking and a two-letter minimum.
 2. Clean portable packaging without Windows operating-system DLLs.
-3. A per-user NSIS installer and tag-gated GitHub Release workflow.
+3. A per-user Inno Setup installer and tag-gated GitHub Release workflow.
 4. Quiet ONNX startup with a regression check for schema-message flooding.
 
 Hard-coded HUD masks are not part of this change. The user should calibrate
@@ -119,14 +119,17 @@ path-format change cannot silently reintroduce system DLLs.
 The portable ZIP remains an Actions artifact for diagnostics and manual
 fallback. It is not the primary public download.
 
-## NSIS Installer
+## Inno Setup Installer
 
 CPack will additionally generate
-`DotaKeyboardSetup-<version>-windows-x64.exe` using the NSIS generator on the
-pinned `windows-2022` runner. The installer will:
+`DotaKeyboardSetup-<version>-windows-x64.exe` using the `INNOSETUP` generator
+on the pinned `windows-2022` runner. The generator requires Inno Setup 6 or
+newer; the runner provides it without an additional download. The installer
+will:
 
 - install per-user without requiring elevation;
-- place the payload below `%LOCALAPPDATA%`;
+- use `PrivilegesRequired=lowest`;
+- place the payload below `%LOCALAPPDATA%\Programs`;
 - create a Start Menu shortcut;
 - register an uninstaller in Windows Apps & Features;
 - preserve the safe default `live_input=false`;
