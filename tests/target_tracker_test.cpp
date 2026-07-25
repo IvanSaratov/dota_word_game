@@ -193,6 +193,40 @@ TEST_CASE("sent word consumes nearby stable cropped fragments") {
     }
 }
 
+TEST_CASE("sent word consumes large strict substring crop") {
+    dk::TargetTracker tracker;
+    const auto full =
+        boxed_word("ABADDON", {751, 420, 286, 52});
+    const auto crop =
+        boxed_word("ADDON", {818, 413, 216, 51});
+
+    CHECK_FALSE(update_tracker(tracker, {full}));
+    auto ready = update_tracker(tracker, {full});
+    REQUIRE(ready);
+    tracker.mark_sent(*ready);
+
+    CHECK_FALSE(update_tracker(tracker, {crop}));
+    CHECK_FALSE(update_tracker(tracker, {crop}));
+}
+
+TEST_CASE("overlapping non-substring above area ceiling stays eligible") {
+    dk::TargetTracker tracker;
+    const auto sent_word =
+        boxed_word("ABADDON", {751, 420, 286, 52});
+    const auto distinct =
+        boxed_word("MEDUSA", {818, 413, 216, 51});
+
+    CHECK_FALSE(update_tracker(tracker, {sent_word}));
+    auto ready = update_tracker(tracker, {sent_word});
+    REQUIRE(ready);
+    tracker.mark_sent(*ready);
+
+    CHECK_FALSE(update_tracker(tracker, {distinct}));
+    const auto selected = update_tracker(tracker, {distinct});
+    REQUIRE(selected);
+    CHECK(selected->normalized_text == "MEDUSA");
+}
+
 TEST_CASE("different full-size word near a sent track stays eligible") {
     dk::TargetTracker tracker;
     CHECK_FALSE(update_tracker(

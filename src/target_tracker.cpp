@@ -34,6 +34,22 @@ bool center_inside_expanded(
            candidate.center_y() <= retained.bottom() + expansion;
 }
 
+bool is_strict_substring(
+    const TextCandidate& candidate, const TextCandidate& sent) noexcept {
+    const auto& candidate_text = candidate.normalized_text;
+    const auto& sent_text = sent.normalized_text;
+    return !candidate_text.empty() &&
+           candidate_text.size() < sent_text.size() &&
+           sent_text.find(candidate_text) != std::string::npos;
+}
+
+bool is_substring_fragment(
+    const TextCandidate& candidate, const TextCandidate& sent,
+    float expansion) noexcept {
+    return is_strict_substring(candidate, sent) &&
+           center_inside_expanded(candidate.bounds, sent.bounds, expansion);
+}
+
 bool is_fragment(
     const TextCandidate& candidate, const TextCandidate& sent,
     float expansion) noexcept {
@@ -89,6 +105,32 @@ std::optional<TextCandidate> TargetTracker::update(std::span<const TextCandidate
         }
         if (closest_track) {
             consume_for_sent_track(*closest_track, candidate_index, true);
+        }
+    }
+
+    for (std::size_t candidate_index = 0; candidate_index < candidates.size();
+         ++candidate_index) {
+        if (matched_candidates[candidate_index]) {
+            continue;
+        }
+
+        std::optional<std::size_t> closest_track;
+        auto closest_distance = 0.0F;
+        for (std::size_t track_index = 0; track_index < tracks_.size(); ++track_index) {
+            const auto& track = tracks_[track_index];
+            if (!track.sent || !is_substring_fragment(
+                                   candidates[candidate_index], track.value,
+                                   config_.max_center_distance_px)) {
+                continue;
+            }
+            const auto distance = center_distance(track.value, candidates[candidate_index]);
+            if (!closest_track || distance < closest_distance) {
+                closest_track = track_index;
+                closest_distance = distance;
+            }
+        }
+        if (closest_track) {
+            consume_for_sent_track(*closest_track, candidate_index, false);
         }
     }
 
