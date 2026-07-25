@@ -24,15 +24,12 @@ private:
     struct Track {
         TextCandidate value;
         int seen_frames{1};
-    };
-    struct Lock {
-        TextCandidate value;
         int missing_frames{};
+        bool sent{};
     };
 
     TrackerConfig config_;
-    std::vector<Track> previous_;
-    std::vector<Lock> locks_;
+    std::vector<Track> tracks_;
 };
 
 }  // namespace dk

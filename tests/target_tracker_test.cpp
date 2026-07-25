@@ -49,3 +49,39 @@ TEST_CASE("sent target stays locked until missing") {
     CHECK_FALSE(update_tracker(tracker, {word("AGAIN", 100)}));
     CHECK(update_tracker(tracker, {word("AGAIN", 106)}));
 }
+
+TEST_CASE("sent target remains locked while moving farther than one match radius") {
+    dk::TargetTracker tracker;
+    CHECK_FALSE(update_tracker(tracker, {word("BANE", 100)}));
+    auto ready = update_tracker(tracker, {word("BANE", 170)});
+    REQUIRE(ready);
+    tracker.mark_sent(*ready);
+
+    CHECK_FALSE(update_tracker(tracker, {word("BANE", 240)}));
+    CHECK_FALSE(update_tracker(tracker, {word("BANE", 310)}));
+}
+
+TEST_CASE("temporary partial OCR does not unlock a sent moving target") {
+    dk::TargetTracker tracker;
+    CHECK_FALSE(update_tracker(tracker, {word("BANE", 100)}));
+    auto ready = update_tracker(tracker, {word("BANE", 150)});
+    REQUIRE(ready);
+    tracker.mark_sent(*ready);
+
+    CHECK_FALSE(update_tracker(tracker, {word("ANE", 200)}));
+    CHECK_FALSE(update_tracker(tracker, {word("BANE", 250)}));
+    CHECK_FALSE(update_tracker(tracker, {word("BANE", 300)}));
+}
+
+TEST_CASE("same word can be selected again after the old target disappears") {
+    dk::TargetTracker tracker;
+    CHECK_FALSE(update_tracker(tracker, {word("BANE", 100)}));
+    auto ready = update_tracker(tracker, {word("BANE", 150)});
+    REQUIRE(ready);
+    tracker.mark_sent(*ready);
+
+    CHECK_FALSE(update_tracker(tracker, {}));
+    CHECK_FALSE(update_tracker(tracker, {}));
+    CHECK_FALSE(update_tracker(tracker, {word("BANE", 100)}));
+    CHECK(update_tracker(tracker, {word("BANE", 150)}));
+}

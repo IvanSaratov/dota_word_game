@@ -6,13 +6,19 @@
 namespace dk {
 namespace {
 
-bool matches(const TextCandidate& left, const TextCandidate& right, float maximum_distance) {
-    if (left.normalized_text != right.normalized_text) {
-        return false;
-    }
-
+float center_distance(const TextCandidate& left, const TextCandidate& right) {
     return std::hypot(left.bounds.center_x() - right.bounds.center_x(),
-                      left.bounds.center_y() - right.bounds.center_y()) <= maximum_distance;
+                      left.bounds.center_y() - right.bounds.center_y());
+}
+
+bool compatible_size(const TextCandidate& left, const TextCandidate& right) {
+    const auto ratio_in_range = [](int left_size, int right_size) {
+        const auto smaller = static_cast<float>(std::min(left_size, right_size));
+        const auto larger = static_cast<float>(std::max(left_size, right_size));
+        return larger > 0.0F && smaller / larger >= 0.5F;
+    };
+    return ratio_in_range(left.bounds.width, right.bounds.width) &&
+           ratio_in_range(left.bounds.height, right.bounds.height);
 }
 
 }  // namespace
@@ -20,32 +26,77 @@ bool matches(const TextCandidate& left, const TextCandidate& right, float maximu
 TargetTracker::TargetTracker(TrackerConfig config) : config_(config) {}
 
 std::optional<TextCandidate> TargetTracker::update(std::span<const TextCandidate> candidates) {
-    for (auto& lock : locks_) {
-        const bool present = std::any_of(candidates.begin(), candidates.end(), [&](const auto& candidate) {
-            return matches(lock.value, candidate, config_.max_center_distance_px);
-        });
-        lock.missing_frames = present ? 0 : lock.missing_frames + 1;
+    struct Match {
+        float distance;
+        std::size_t track_index;
+        std::size_t candidate_index;
+    };
+
+    std::vector<Match> matches;
+    for (std::size_t track_index = 0; track_index < tracks_.size(); ++track_index) {
+        for (std::size_t candidate_index = 0; candidate_index < candidates.size();
+             ++candidate_index) {
+            const auto distance = center_distance(
+                tracks_[track_index].value, candidates[candidate_index]);
+            if (distance <= config_.max_center_distance_px &&
+                compatible_size(tracks_[track_index].value, candidates[candidate_index])) {
+                matches.push_back({distance, track_index, candidate_index});
+            }
+        }
     }
-    std::erase_if(locks_, [&](const Lock& lock) {
-        return lock.missing_frames >= config_.unlock_missing_frames;
+    std::ranges::sort(matches, [](const Match& left, const Match& right) {
+        if (left.distance != right.distance) {
+            return left.distance < right.distance;
+        }
+        if (left.track_index != right.track_index) {
+            return left.track_index < right.track_index;
+        }
+        return left.candidate_index < right.candidate_index;
     });
 
-    std::vector<Track> current;
-    current.reserve(candidates.size());
-    for (const auto& candidate : candidates) {
-        const auto previous = std::find_if(previous_.begin(), previous_.end(), [&](const Track& track) {
-            return matches(track.value, candidate, config_.max_center_distance_px);
-        });
-        current.push_back({candidate, previous == previous_.end() ? 1 : previous->seen_frames + 1});
+    std::vector<bool> matched_tracks(tracks_.size());
+    std::vector<bool> matched_candidates(candidates.size());
+    for (const auto& match : matches) {
+        if (matched_tracks[match.track_index] || matched_candidates[match.candidate_index]) {
+            continue;
+        }
+        matched_tracks[match.track_index] = true;
+        matched_candidates[match.candidate_index] = true;
+
+        auto& track = tracks_[match.track_index];
+        const auto& candidate = candidates[match.candidate_index];
+        track.missing_frames = 0;
+        if (track.sent) {
+            track.value.bounds = candidate.bounds;
+        } else if (track.value.normalized_text == candidate.normalized_text) {
+            track.value = candidate;
+            ++track.seen_frames;
+        } else {
+            track.value = candidate;
+            track.seen_frames = 1;
+        }
     }
-    previous_ = current;
+
+    for (std::size_t track_index = 0; track_index < tracks_.size(); ++track_index) {
+        if (!matched_tracks[track_index]) {
+            ++tracks_[track_index].missing_frames;
+        }
+    }
+    std::erase_if(tracks_, [&](const Track& track) {
+        return track.missing_frames >= config_.unlock_missing_frames;
+    });
+
+    for (std::size_t candidate_index = 0; candidate_index < candidates.size();
+         ++candidate_index) {
+        if (!matched_candidates[candidate_index]) {
+            tracks_.push_back({candidates[candidate_index]});
+        }
+    }
 
     std::optional<TextCandidate> result;
-    for (const auto& track : current) {
-        const bool locked = std::any_of(locks_.begin(), locks_.end(), [&](const Lock& lock) {
-            return matches(lock.value, track.value, config_.max_center_distance_px);
-        });
-        if (locked || track.seen_frames < config_.confirm_frames ||
+    for (const auto& track : tracks_) {
+        if (track.sent || track.missing_frames != 0 ||
+            track.seen_frames < config_.confirm_frames ||
             (result && track.value.bounds.bottom() <= result->bounds.bottom())) {
             continue;
         }
@@ -55,7 +106,23 @@ std::optional<TextCandidate> TargetTracker::update(std::span<const TextCandidate
 }
 
 void TargetTracker::mark_sent(const TextCandidate& candidate) {
-    locks_.push_back({candidate, 0});
+    Track* closest = nullptr;
+    auto closest_distance = config_.max_center_distance_px;
+    for (auto& track : tracks_) {
+        if (track.sent || track.missing_frames != 0 ||
+            track.value.normalized_text != candidate.normalized_text) {
+            continue;
+        }
+        const auto distance = center_distance(track.value, candidate);
+        if (distance <= config_.max_center_distance_px &&
+            (closest == nullptr || distance < closest_distance)) {
+            closest = &track;
+            closest_distance = distance;
+        }
+    }
+    if (closest != nullptr) {
+        closest->sent = true;
+    }
 }
 
 }  // namespace dk
