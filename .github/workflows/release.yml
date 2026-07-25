@@ -1,0 +1,325 @@
+name: Windows release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-release:
+    runs-on: windows-2022
+    permissions:
+      contents: read
+    env:
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}\.vcpkg-binary-cache
+      VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}\.vcpkg-binary-cache,readwrite
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch origin/main
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Test release policy
+        run: pwsh -NoProfile -File scripts/test-release-policy.ps1
+
+      - name: Validate tag and main ancestry
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          pwsh -NoProfile -File scripts/validate-release.ps1 `
+            -Tag $env:GITHUB_REF_NAME `
+            -Commit $env:GITHUB_SHA `
+            -MainRef refs/remotes/origin/main
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Restore vcpkg binary cache
+        id: vcpkg-cache
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ github.workspace }}\.vcpkg-binary-cache
+          key: windows-2022-vcpkg-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            windows-2022-vcpkg-
+
+      - name: Configure vcpkg environment
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not $env:VCPKG_INSTALLATION_ROOT) {
+            throw 'The runner did not provide VCPKG_INSTALLATION_ROOT.'
+          }
+          "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" >> $env:GITHUB_ENV
+          New-Item -ItemType Directory -Force -Path $env:VCPKG_DEFAULT_BINARY_CACHE | Out-Null
+          $baseline = (Get-Content vcpkg.json -Raw | ConvertFrom-Json).'builtin-baseline'
+          git -C $env:VCPKG_INSTALLATION_ROOT fetch --no-tags origin $baseline
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git -C $env:VCPKG_INSTALLATION_ROOT checkout --detach $baseline
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git -C $env:VCPKG_INSTALLATION_ROOT cat-file -e "$($baseline):versions/baseline.json"
+          if ($LASTEXITCODE -ne 0) {
+            throw "The vcpkg baseline $baseline does not contain versions/baseline.json."
+          }
+          & (Join-Path $env:VCPKG_INSTALLATION_ROOT 'bootstrap-vcpkg.bat') -disableMetrics
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Fetch pinned OCR assets
+        run: pwsh -NoProfile -File scripts/fetch-models.ps1
+
+      - name: Configure project and install dependencies
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          cmake --preset windows-release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Save vcpkg binary cache
+        if: ${{ always() && steps.vcpkg-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ github.workspace }}\.vcpkg-binary-cache
+          key: windows-2022-vcpkg-${{ hashFiles('vcpkg.json') }}
+
+      - name: Build, test, install, and package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          cmake --build --preset windows-release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ctest --preset windows-release --output-on-failure *>&1 |
+            Tee-Object -FilePath build/windows-release/ctest-release.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --install build/windows-release --config Release --prefix dist
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cpack --preset windows-release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cpack --preset windows-installer
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Upload CTest log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dota-keyboard-release-ctest-log
+          if-no-files-found: warn
+          path: build/windows-release/ctest-release.log
+
+      - name: Validate packaged ZIP
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $zip = @(Get-ChildItem -Path build/windows-release -Filter 'dota-keyboard-*-windows-x64.zip' -File)
+          if ($zip.Count -ne 1) {
+            throw "Expected exactly one package ZIP, found $($zip.Count)."
+          }
+          $extractRoot = Join-Path $env:RUNNER_TEMP "dota-keyboard-package-smoke-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
+          New-Item -ItemType Directory -Path $extractRoot | Out-Null
+          Expand-Archive -LiteralPath $zip[0].FullName -DestinationPath $extractRoot
+          $dllNames = @(
+            Get-ChildItem -Path $extractRoot -Recurse -File -Filter '*.dll' |
+              ForEach-Object { $_.Name.ToLowerInvariant() }
+          )
+          $forbiddenDllNames = @(
+            'kernel32.dll', 'user32.dll', 'gdi32.dll', 'advapi32.dll',
+            'd3d11.dll', 'dxgi.dll', 'setupapi.dll', 'dbghelp.dll', 'ucrtbase.dll'
+          )
+          $forbiddenDlls = $dllNames | Where-Object {
+            $_ -in $forbiddenDllNames -or
+            $_ -like 'api-ms-*.dll' -or
+            $_ -like 'ext-ms-*.dll'
+          }
+          if ($forbiddenDlls) {
+            throw "Package contains forbidden Windows system DLLs: $($forbiddenDlls -join ', ')"
+          }
+          foreach ($relativePath in @(
+            'dota_keyboard.exe',
+            'assets/models/en_PP-OCRv5_rec_mobile_infer.onnx',
+            'assets/models/ppocrv5_en_dict.txt',
+            'config.json',
+            'README.ru.md'
+          )) {
+            if (-not (Test-Path (Join-Path $extractRoot $relativePath) -PathType Leaf)) {
+              throw "Package is missing $relativePath."
+            }
+          }
+          foreach ($dllPattern in @('onnxruntime.dll', 'opencv_core*.dll', 'vcruntime140*.dll', 'msvcp140*.dll')) {
+            if (-not (Get-ChildItem -Path $extractRoot -Filter $dllPattern -File)) {
+              throw "Package is missing runtime dependency matching $dllPattern."
+            }
+          }
+          $forbiddenFiles = Get-ChildItem -Path $extractRoot -Recurse -File |
+            Where-Object {
+              $_.Extension -in @('.c', '.cc', '.cpp', '.h', '.hpp', '.py') -or
+              $_.FullName -match '[\\/](tests?|vcpkg_installed)[\\/]'
+            }
+          if ($forbiddenFiles) {
+            throw "Package contains forbidden source/test/Python files: $($forbiddenFiles.FullName -join ', ')"
+          }
+          Push-Location $extractRoot
+          try {
+            $checkOutput = @(& .\dota_keyboard.exe --check-install 2>&1)
+            $checkExitCode = $LASTEXITCODE
+            $checkOutput | ForEach-Object { Write-Host $_ }
+            if ($checkExitCode -ne 0) {
+              throw "dota_keyboard.exe --check-install exited with $checkExitCode."
+            }
+            if ($checkOutput -match 'Schema error: Trying to register schema') {
+              throw 'dota_keyboard.exe emitted the ONNX Runtime schema registration flood.'
+            }
+          } finally {
+            Pop-Location
+          }
+
+      - name: Validate installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installer = @(
+            Get-ChildItem -Path build/windows-release `
+              -Filter 'DotaKeyboardSetup-*-windows-x64.exe' -File
+          )
+          if ($installer.Count -ne 1) {
+            throw "Expected exactly one installer EXE, found $($installer.Count)."
+          }
+          $installRoot = Join-Path $env:RUNNER_TEMP "dota-keyboard-installer-smoke-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
+          New-Item -ItemType Directory -Path $installRoot | Out-Null
+          $process = Start-Process -FilePath $installer[0].FullName -Wait -PassThru `
+            -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART',
+                          "/DIR=$installRoot"
+          if ($process.ExitCode -ne 0) {
+            throw "Installer exited with $($process.ExitCode)."
+          }
+          $dllNames = @(
+            Get-ChildItem -Path $installRoot -Recurse -File -Filter '*.dll' |
+              ForEach-Object { $_.Name.ToLowerInvariant() }
+          )
+          $forbiddenDllNames = @(
+            'kernel32.dll', 'user32.dll', 'gdi32.dll', 'advapi32.dll',
+            'd3d11.dll', 'dxgi.dll', 'setupapi.dll', 'dbghelp.dll', 'ucrtbase.dll'
+          )
+          $forbiddenDlls = $dllNames | Where-Object {
+            $_ -in $forbiddenDllNames -or
+            $_ -like 'api-ms-*.dll' -or
+            $_ -like 'ext-ms-*.dll'
+          }
+          if ($forbiddenDlls) {
+            throw "Installer contains forbidden Windows system DLLs: $($forbiddenDlls -join ', ')"
+          }
+          foreach ($relativePath in @(
+            'dota_keyboard.exe',
+            'assets/models/en_PP-OCRv5_rec_mobile_infer.onnx',
+            'assets/models/ppocrv5_en_dict.txt',
+            'config.json',
+            'README.ru.md'
+          )) {
+            if (-not (Test-Path (Join-Path $installRoot $relativePath) -PathType Leaf)) {
+              throw "Installer is missing $relativePath."
+            }
+          }
+          foreach ($dllPattern in @('onnxruntime.dll', 'opencv_core*.dll', 'vcruntime140*.dll', 'msvcp140*.dll')) {
+            if (-not (Get-ChildItem -Path $installRoot -Filter $dllPattern -File)) {
+              throw "Installer is missing runtime dependency matching $dllPattern."
+            }
+          }
+          $forbiddenFiles = Get-ChildItem -Path $installRoot -Recurse -File |
+            Where-Object {
+              $_.Extension -in @('.c', '.cc', '.cpp', '.h', '.hpp', '.py') -or
+              $_.FullName -match '[\\/](tests?|vcpkg_installed)[\\/]'
+            }
+          if ($forbiddenFiles) {
+            throw "Installer contains forbidden source/test/Python files: $($forbiddenFiles.FullName -join ', ')"
+          }
+          Push-Location $installRoot
+          try {
+            $checkOutput = @(& .\dota_keyboard.exe --check-install 2>&1)
+            $checkExitCode = $LASTEXITCODE
+            $checkOutput | ForEach-Object { Write-Host $_ }
+            if ($checkExitCode -ne 0) {
+              throw "Installed dota_keyboard.exe --check-install exited with $checkExitCode."
+            }
+            if ($checkOutput -match 'Schema error: Trying to register schema') {
+              throw 'Installed dota_keyboard.exe emitted the ONNX Runtime schema registration flood.'
+            }
+          } finally {
+            Pop-Location
+          }
+          $uninstaller = Join-Path $installRoot 'unins000.exe'
+          if (-not (Test-Path $uninstaller -PathType Leaf)) {
+            throw 'Installer did not create unins000.exe.'
+          }
+          $process = Start-Process -FilePath $uninstaller -Wait -PassThru `
+            -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART'
+          if ($process.ExitCode -ne 0) {
+            throw "Uninstaller exited with $($process.ExitCode)."
+          }
+          if (Test-Path (Join-Path $installRoot 'dota_keyboard.exe') -PathType Leaf) {
+            throw 'Uninstaller left dota_keyboard.exe behind.'
+          }
+
+      - name: Create installer checksum
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installer = @(
+            Get-ChildItem -Path build/windows-release `
+              -Filter 'DotaKeyboardSetup-*-windows-x64.exe' -File
+          )
+          if ($installer.Count -ne 1) {
+            throw "Expected exactly one installer EXE, found $($installer.Count)."
+          }
+          $hash = Get-FileHash -LiteralPath $installer[0].FullName -Algorithm SHA256
+          $checksumPath = "$($installer[0].FullName).sha256"
+          Set-Content -LiteralPath $checksumPath -Encoding ascii `
+            -Value "$($hash.Hash)  $($installer[0].Name)"
+
+      - name: Upload validated portable ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: dota-keyboard-windows-x64-portable
+          if-no-files-found: error
+          path: build/windows-release/dota-keyboard-*-windows-x64.zip
+
+      - name: Upload validated release assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: dota-keyboard-windows-x64-release-assets
+          if-no-files-found: error
+          path: |
+            build/windows-release/DotaKeyboardSetup-*-windows-x64.exe
+            build/windows-release/DotaKeyboardSetup-*-windows-x64.exe.sha256
+
+  publish-release:
+    needs: build-release
+    runs-on: windows-2022
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download validated release assets
+        uses: actions/download-artifact@v4
+        with:
+          name: dota-keyboard-windows-x64-release-assets
+          path: release-assets
+
+      - name: Publish GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installer = Get-ChildItem .\release-assets\DotaKeyboardSetup-*-windows-x64.exe -File
+          $checksum = Get-ChildItem .\release-assets\DotaKeyboardSetup-*-windows-x64.exe.sha256 -File
+          if (@($installer).Count -ne 1 -or @($checksum).Count -ne 1) {
+            throw 'Expected exactly one installer and one checksum.'
+          }
+          gh release create $env:GITHUB_REF_NAME `
+            $installer.FullName $checksum.FullName `
+            --verify-tag --generate-notes --title $env:GITHUB_REF_NAME
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

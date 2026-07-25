@@ -101,6 +101,23 @@ Runtime. Не удаляйте `build\windows-release` и стандартный
 `build\windows-release\DotaKeyboardSetup-*-windows-x64.exe`, а технический
 архив — как `build\windows-release\dota-keyboard-*-windows-x64.zip`.
 
+## Выпуск релиза
+
+Сопровождающий выпускает релиз только из актуальной ветки `main`:
+
+```bash
+git switch main
+git pull --ff-only
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+Тег обязан точно соответствовать версии в
+`project(dota_keyboard VERSION ...)` из корневого `CMakeLists.txt` и стоять на
+коммите, который уже присутствует в `origin/main`. После проверки тега GitHub
+Actions публикует установщик и файл с его SHA256; технический ZIP остаётся
+артефактом запуска workflow.
+
 ## Неполадки
 
 | Симптом | Что сделать |
