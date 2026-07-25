@@ -80,6 +80,31 @@ bool require_smoke_contracts(const std::string& source, const char* workflow_nam
     return valid;
 }
 
+bool require_vcpkg_cache_contracts(
+    const std::string& source, const char* workflow_name) {
+    bool valid = true;
+    const std::string cache_key =
+        "windows-2022-vcpkg-v2-${{ hashFiles('vcpkg.json', "
+        "'CMakePresets.json', 'cmake/triplets/**') }}";
+    if (count_text(source, cache_key) != 2) {
+        std::cerr << workflow_name
+                  << " must use the v2 dependency-config-aware key for restore and save\n";
+        valid = false;
+    }
+    valid &= require_text(
+        source,
+        "if: ${{ success() && steps.vcpkg-cache.outputs.cache-hit != 'true' }}",
+        "success-only vcpkg cache save");
+    if (source.find(
+            "always() && steps.vcpkg-cache.outputs.cache-hit != 'true'") !=
+        std::string::npos) {
+        std::cerr << workflow_name
+                  << " must not save a partial vcpkg cache after cancellation or failure\n";
+        valid = false;
+    }
+    return valid;
+}
+
 }  // namespace
 
 int main() {
@@ -92,6 +117,8 @@ int main() {
     bool valid = true;
     valid &= require_smoke_contracts(windows_source, "windows.yml");
     valid &= require_smoke_contracts(release_source, "release.yml");
+    valid &= require_vcpkg_cache_contracts(windows_source, "windows.yml");
+    valid &= require_vcpkg_cache_contracts(release_source, "release.yml");
     valid &= require_text(
         release_source, "--generate-notes", "generated GitHub release notes");
     valid &= require_text(

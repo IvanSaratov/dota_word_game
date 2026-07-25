@@ -44,9 +44,9 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: ${{ github.workspace }}\.vcpkg-binary-cache
-          key: windows-2022-vcpkg-${{ hashFiles('vcpkg.json') }}
+          key: windows-2022-vcpkg-v2-${{ hashFiles('vcpkg.json', 'CMakePresets.json', 'cmake/triplets/**') }}
           restore-keys: |
-            windows-2022-vcpkg-
+            windows-2022-vcpkg-v2-
 
       - name: Configure vcpkg environment
         shell: pwsh
@@ -80,11 +80,11 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Save vcpkg binary cache
-        if: ${{ always() && steps.vcpkg-cache.outputs.cache-hit != 'true' }}
+        if: ${{ success() && steps.vcpkg-cache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v5
         with:
           path: ${{ github.workspace }}\.vcpkg-binary-cache
-          key: windows-2022-vcpkg-${{ hashFiles('vcpkg.json') }}
+          key: windows-2022-vcpkg-v2-${{ hashFiles('vcpkg.json', 'CMakePresets.json', 'cmake/triplets/**') }}
 
       - name: Build, test, install, and package
         shell: pwsh

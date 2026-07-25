@@ -15,6 +15,10 @@
 #error "DK_CMAKE_PRESETS_PATH must name CMakePresets.json"
 #endif
 
+#ifndef DK_VCPKG_TRIPLET_PATH
+#error "DK_VCPKG_TRIPLET_PATH must name the project vcpkg triplet"
+#endif
+
 int main() {
     std::ifstream input{DK_ROOT_CMAKE_PATH};
     const std::string source{
@@ -116,6 +120,45 @@ int main() {
         installer_generator == std::string::npos ||
         zip_generator > installer_preset) {
         std::cerr << "package presets must provide ZIP and INNOSETUP generators\n";
+        return 1;
+    }
+
+    if (presets_source.find(
+            R"("VCPKG_TARGET_TRIPLET": "x64-windows-dota")") ==
+            std::string::npos ||
+        presets_source.find(
+            R"("VCPKG_OVERLAY_TRIPLETS": "${sourceDir}/cmake/triplets")") ==
+            std::string::npos) {
+        std::cerr << "Windows presets must use the project overlay triplet\n";
+        return 1;
+    }
+
+    std::ifstream triplet_input{DK_VCPKG_TRIPLET_PATH};
+    const std::string triplet_source{
+        std::istreambuf_iterator<char>{triplet_input},
+        std::istreambuf_iterator<char>{}};
+    if (!triplet_input || triplet_input.bad()) {
+        std::cerr << "could not read the project vcpkg triplet\n";
+        return 1;
+    }
+    const auto onnx_condition =
+        triplet_source.find(R"(if("${PORT}" STREQUAL "onnx"))");
+    const std::string disable_registration_statement =
+        R"(list(APPEND VCPKG_CMAKE_CONFIGURE_OPTIONS -DONNX_DISABLE_STATIC_REGISTRATION=ON))";
+    const auto disable_registration =
+        triplet_source.find(disable_registration_statement);
+    const auto condition_end = triplet_source.find("endif()", disable_registration);
+    if (onnx_condition == std::string::npos ||
+        disable_registration == std::string::npos ||
+        condition_end == std::string::npos ||
+        !(onnx_condition < disable_registration &&
+          disable_registration < condition_end) ||
+        triplet_source.find(
+            "-DONNX_DISABLE_STATIC_REGISTRATION=ON",
+            disable_registration + disable_registration_statement.size()) !=
+            std::string::npos) {
+        std::cerr
+            << "the overlay triplet must disable static registration only for the onnx port\n";
         return 1;
     }
     return 0;
