@@ -18,7 +18,7 @@ int main() {
 
     const auto register_class = source.find("ATOM register_overlay_class()");
     const auto unicode_cursor = source.find(
-        "LoadCursorW(nullptr, MAKEINTRESOURCEW(OCR_CROSS))", register_class);
+        "LoadCursorW(nullptr, MAKEINTRESOURCEW(32515))", register_class);
     const auto ansi_cursor =
         source.find("LoadCursorW(nullptr, IDC_CROSS)", register_class);
     if (register_class == std::string::npos ||
