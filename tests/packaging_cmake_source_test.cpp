@@ -141,6 +141,18 @@ int main() {
         std::cerr << "could not read the project vcpkg triplet\n";
         return 1;
     }
+    if (triplet_source.find("set(VCPKG_TARGET_ARCHITECTURE x64)") ==
+            std::string::npos ||
+        triplet_source.find("set(VCPKG_CRT_LINKAGE dynamic)") ==
+            std::string::npos ||
+        triplet_source.find("set(VCPKG_LIBRARY_LINKAGE dynamic)") ==
+            std::string::npos ||
+        triplet_source.find("set(VCPKG_PROVIDED_FORTRAN ON)") ==
+            std::string::npos) {
+        std::cerr
+            << "the overlay triplet must preserve all pinned x64-windows base settings\n";
+        return 1;
+    }
     const auto onnx_condition =
         triplet_source.find(R"(if("${PORT}" STREQUAL "onnx"))");
     const std::string disable_registration_statement =
