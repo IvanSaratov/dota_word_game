@@ -80,6 +80,9 @@ std::optional<TextCandidate> TargetTracker::update(std::span<const TextCandidate
     for (std::size_t track_index = 0; track_index < tracks_.size(); ++track_index) {
         if (!matched_tracks[track_index]) {
             ++tracks_[track_index].missing_frames;
+            if (!tracks_[track_index].sent) {
+                tracks_[track_index].seen_frames = 0;
+            }
         }
     }
     std::erase_if(tracks_, [&](const Track& track) {

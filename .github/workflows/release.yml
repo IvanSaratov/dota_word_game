@@ -148,6 +148,11 @@ jobs:
               throw "Package is missing $relativePath."
             }
           }
+          $packageConfig = Get-Content -LiteralPath (Join-Path $extractRoot 'config.json') `
+            -Raw | ConvertFrom-Json
+          if ($packageConfig.live_input -ne $false) {
+            throw 'Packaged config.json must default live_input to false.'
+          }
           foreach ($dllPattern in @('onnxruntime.dll', 'opencv_core*.dll', 'vcruntime140*.dll', 'msvcp140*.dll')) {
             if (-not (Get-ChildItem -Path $extractRoot -Filter $dllPattern -File)) {
               throw "Package is missing runtime dependency matching $dllPattern."
@@ -191,7 +196,7 @@ jobs:
           New-Item -ItemType Directory -Path $installRoot | Out-Null
           $process = Start-Process -FilePath $installer[0].FullName -Wait -PassThru `
             -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART',
-                          "/DIR=$installRoot"
+                          "/DIR=`"$installRoot`""
           if ($process.ExitCode -ne 0) {
             throw "Installer exited with $($process.ExitCode)."
           }
@@ -222,6 +227,11 @@ jobs:
               throw "Installer is missing $relativePath."
             }
           }
+          $packageConfig = Get-Content -LiteralPath (Join-Path $installRoot 'config.json') `
+            -Raw | ConvertFrom-Json
+          if ($packageConfig.live_input -ne $false) {
+            throw 'Installed config.json must default live_input to false.'
+          }
           foreach ($dllPattern in @('onnxruntime.dll', 'opencv_core*.dll', 'vcruntime140*.dll', 'msvcp140*.dll')) {
             if (-not (Get-ChildItem -Path $installRoot -Filter $dllPattern -File)) {
               throw "Installer is missing runtime dependency matching $dllPattern."
@@ -249,6 +259,46 @@ jobs:
           } finally {
             Pop-Location
           }
+          $installedExecutable = [IO.Path]::GetFullPath(
+            (Join-Path $installRoot 'dota_keyboard.exe')
+          )
+          $startMenuRoot = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'
+          $shell = New-Object -ComObject WScript.Shell
+          $shortcuts = @(
+            Get-ChildItem -LiteralPath $startMenuRoot -Filter '*.lnk' -File -Recurse |
+              Where-Object {
+                $targetPath = $shell.CreateShortcut($_.FullName).TargetPath
+                $targetPath -and [string]::Equals(
+                  [IO.Path]::GetFullPath($targetPath),
+                  $installedExecutable,
+                  [StringComparison]::OrdinalIgnoreCase
+                )
+              }
+          )
+          if ($shortcuts.Count -ne 1) {
+            throw "Expected exactly one Start Menu shortcut for the installed executable, found $($shortcuts.Count)."
+          }
+          $expectedInstallRoot = [IO.Path]::GetFullPath($installRoot).TrimEnd(
+            [IO.Path]::DirectorySeparatorChar
+          )
+          $uninstallRegistryRoot = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall'
+          $uninstallEntries = @(
+            Get-ChildItem -LiteralPath $uninstallRegistryRoot -ErrorAction SilentlyContinue |
+              Where-Object {
+                $registeredLocation = [string]$_.GetValue('InstallLocation')
+                $registeredLocation -and [string]::Equals(
+                  [IO.Path]::GetFullPath($registeredLocation).TrimEnd(
+                    [IO.Path]::DirectorySeparatorChar
+                  ),
+                  $expectedInstallRoot,
+                  [StringComparison]::OrdinalIgnoreCase
+                )
+              }
+          )
+          if ($uninstallEntries.Count -ne 1) {
+            throw "Expected exactly one HKCU uninstall registration for the install root, found $($uninstallEntries.Count)."
+          }
+          $uninstallRegistryPath = $uninstallEntries[0].PSPath
           $uninstaller = Join-Path $installRoot 'unins000.exe'
           if (-not (Test-Path $uninstaller -PathType Leaf)) {
             throw 'Installer did not create unins000.exe.'
@@ -258,8 +308,21 @@ jobs:
           if ($process.ExitCode -ne 0) {
             throw "Uninstaller exited with $($process.ExitCode)."
           }
-          if (Test-Path (Join-Path $installRoot 'dota_keyboard.exe') -PathType Leaf) {
-            throw 'Uninstaller left dota_keyboard.exe behind.'
+          $remainingPayload = @(
+            Get-ChildItem -LiteralPath $installRoot -Recurse -Force `
+              -ErrorAction SilentlyContinue
+          )
+          if ($remainingPayload.Count -ne 0) {
+            throw "Uninstaller left installed payload behind: $($remainingPayload.FullName -join ', ')"
+          }
+          $remainingShortcuts = @(
+            $shortcuts | Where-Object { Test-Path -LiteralPath $_.FullName }
+          )
+          if ($remainingShortcuts.Count -ne 0) {
+            throw "Uninstaller left Start Menu shortcuts behind: $($remainingShortcuts.FullName -join ', ')"
+          }
+          if (Test-Path -LiteralPath $uninstallRegistryPath) {
+            throw 'Uninstaller left its HKCU uninstall registration behind.'
           }
 
       - name: Create installer checksum
@@ -319,7 +382,12 @@ jobs:
           if (@($installer).Count -ne 1 -or @($checksum).Count -ne 1) {
             throw 'Expected exactly one installer and one checksum.'
           }
+          $releaseNotes = @'
+          > [!WARNING]
+          > The Windows installer is unsigned. Microsoft Defender SmartScreen may warn about an unknown publisher. Verify the installer against the published `.sha256` checksum before running it.
+          '@
           gh release create $env:GITHUB_REF_NAME `
             $installer.FullName $checksum.FullName `
-            --verify-tag --generate-notes --title $env:GITHUB_REF_NAME
+            --verify-tag --generate-notes --notes $releaseNotes `
+            --title $env:GITHUB_REF_NAME
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

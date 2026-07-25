@@ -155,14 +155,14 @@ TEST_CASE("app rejects empty and low confidence recognition") {
     CHECK(input.sent.empty());
 }
 
-TEST_CASE("app rejects one letter and accepts two letters") {
+TEST_CASE("app filters by length after normalizing punctuation") {
     auto config = dk::AppConfig::defaults();
     config.live_input = true;
     FakeFrameSource frames{2};
     FakeDetector detector{{{10, 60, 100, 30}, {20, 20, 120, 30}}};
     FakeRecognizer recognizer{{
-        {"C", .99F}, {"IO", .99F},
-        {"C", .99F}, {"IO", .99F},
+        {"-C-", .99F}, {"I/O!", .99F},
+        {"-C-", .99F}, {"I/O!", .99F},
     }};
     FakeInputSink input;
     dk::App app(config, frames, detector, recognizer, input);
