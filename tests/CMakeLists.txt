@@ -17,6 +17,11 @@ dk_add_test(config_test config_test.cpp)
 dk_add_test(input_sink_test input_sink_test.cpp)
 dk_add_test(app_test app_test.cpp)
 
+add_executable(ocr_logging_source_test ocr_logging_source_test.cpp)
+target_compile_definitions(ocr_logging_source_test PRIVATE
+  DK_OCR_RECOGNIZER_SOURCE_PATH="${PROJECT_SOURCE_DIR}/src/ocr_recognizer.cpp")
+add_test(NAME ocr_logging_source_test COMMAND ocr_logging_source_test)
+
 add_executable(dxgi_capture_source_test dxgi_capture_source_test.cpp)
 target_compile_definitions(dxgi_capture_source_test PRIVATE
   DK_DXGI_CAPTURE_SOURCE_PATH="${PROJECT_SOURCE_DIR}/src/dxgi_capture_win32.cpp")

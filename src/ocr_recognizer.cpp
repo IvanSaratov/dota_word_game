@@ -28,7 +28,7 @@ constexpr int kInputHeight = 48;
 constexpr int kInputWidth = 320;
 
 Ort::Env& ort_environment() {
-    static Ort::Env environment{ORT_LOGGING_LEVEL_WARNING, "dota_keyboard_ocr"};
+    static Ort::Env environment{ORT_LOGGING_LEVEL_FATAL, "dota_keyboard_ocr"};
     return environment;
 }
 
