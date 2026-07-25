@@ -46,7 +46,7 @@
     {
       "name": "windows-release",
       "configurePreset": "windows-release",
-      "configuration": "Release",
+      "configurations": ["Release"],
       "generators": ["ZIP"]
     }
   ]
