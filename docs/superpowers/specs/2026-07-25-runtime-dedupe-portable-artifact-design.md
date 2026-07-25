@@ -87,9 +87,12 @@ A sent track retains:
 - the most recent full-size bounds;
 - its sent state and missing-frame count.
 
-Association remains one-to-one. The existing distance-and-compatible-size match
-continues to handle normal movement. Two sent-track suppression rules run before
-an unmatched candidate becomes a new track:
+Association remains one-to-one. Unsent tracks continue to use the existing
+distance-and-compatible-size match so that a changed OCR result resets their
+confirmation streak. A sent track uses that normal match only when the
+candidate's normalized text equals its canonical text; this prevents a distinct
+full-size word nearby from being swallowed by the sent track. Two sent-track
+suppression rules run before an unmatched candidate becomes a new track:
 
 1. If its normalized text exactly equals a live sent track's canonical text,
    the candidate is consumed by that sent track even when a detector gap caused
