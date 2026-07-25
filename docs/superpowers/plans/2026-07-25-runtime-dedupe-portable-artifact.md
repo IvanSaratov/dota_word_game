@@ -57,6 +57,8 @@ vcpkg, Inno Setup 6, GitHub CLI.
   `.unlock_missing_frames = 15`.
 - Invariant: a sent track's `value.normalized_text` and full-size bounds remain
   canonical when a fragment is consumed.
+- Invariant: live sent exact-text and qualifying-fragment ownership is resolved
+  before ordinary unsent spatial association.
 
 - [ ] **Step 1: Add log-derived failing tracker tests**
 
@@ -154,6 +156,24 @@ TEST_CASE("same word unlocks after fifteen completely missing frames") {
 }
 ```
 
+Add a focused ordering regression in which sent `BANE` is followed by a
+one-frame unsent `DECOY` at its future position and then two `BANE`
+observations there. Neither later `BANE` may become eligible:
+
+```cpp
+TEST_CASE("sent exact ownership precedes a competing unsent spatial match") {
+    dk::TargetTracker tracker;
+    CHECK_FALSE(update_tracker(tracker, {word("BANE", 100)}));
+    auto ready = update_tracker(tracker, {word("BANE", 150)});
+    REQUIRE(ready);
+    tracker.mark_sent(*ready);
+
+    CHECK_FALSE(update_tracker(tracker, {word("DECOY", 300)}));
+    CHECK_FALSE(update_tracker(tracker, {word("BANE", 300)}));
+    CHECK_FALSE(update_tracker(tracker, {word("BANE", 300)}));
+}
+```
+
 Update the old two-frame disappearance test so it either uses an explicit
 `.unlock_missing_frames = 2` configuration or is replaced by the exact
 15-frame default test above. Extend `config_test.cpp` to require:
@@ -213,22 +233,22 @@ bool is_fragment(
 
 Refactor `TargetTracker::update` in this order:
 
-1. Build normal distance/size matches, but exclude a sent track when candidate
-   normalized text differs from its canonical normalized text.
-2. Apply the existing greedy one-to-one normal matches.
-3. For every still-unmatched candidate, locate the nearest live sent track with
+1. For every candidate, locate the nearest live sent track with
    identical canonical normalized text. Consume the candidate even beyond
    `max_center_distance_px`; when that sent track was unmatched, set
    `missing_frames = 0`, update only its full candidate bounds, and mark the
    track matched.
-4. For every still-unmatched candidate, locate a live sent track satisfying
+2. For every still-unmatched candidate, locate a live sent track satisfying
    `is_fragment`. Mark the candidate consumed. When the sent track was
    unmatched, set `missing_frames = 0` and mark it matched, but do not replace
    canonical text or full-size bounds.
-5. Increment missing counts, erase expired tracks, create new tracks, and
+3. Build and apply the existing greedy one-to-one normal distance/size matches
+   for candidates not owned by a sent track. Continue to exclude a sent track
+   when candidate normalized text differs from its canonical normalized text.
+4. Increment missing counts, erase expired tracks, create new tracks, and
    select the lowest confirmed unsent target as before.
 
-Use a small helper/lambda for steps 3–4 so candidate consumption and sent-track
+Use a small helper/lambda for steps 1–2 so candidate consumption and sent-track
 refresh cannot diverge:
 
 ```cpp

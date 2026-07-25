@@ -55,56 +55,8 @@ std::optional<TextCandidate> TargetTracker::update(std::span<const TextCandidate
         std::size_t candidate_index;
     };
 
-    std::vector<Match> matches;
-    for (std::size_t track_index = 0; track_index < tracks_.size(); ++track_index) {
-        for (std::size_t candidate_index = 0; candidate_index < candidates.size();
-             ++candidate_index) {
-            if (tracks_[track_index].sent &&
-                tracks_[track_index].value.normalized_text !=
-                    candidates[candidate_index].normalized_text) {
-                continue;
-            }
-            const auto distance = center_distance(
-                tracks_[track_index].value, candidates[candidate_index]);
-            if (distance <= config_.max_center_distance_px &&
-                compatible_size(tracks_[track_index].value, candidates[candidate_index])) {
-                matches.push_back({distance, track_index, candidate_index});
-            }
-        }
-    }
-    std::ranges::sort(matches, [](const Match& left, const Match& right) {
-        if (left.distance != right.distance) {
-            return left.distance < right.distance;
-        }
-        if (left.track_index != right.track_index) {
-            return left.track_index < right.track_index;
-        }
-        return left.candidate_index < right.candidate_index;
-    });
-
     std::vector<bool> matched_tracks(tracks_.size());
     std::vector<bool> matched_candidates(candidates.size());
-    for (const auto& match : matches) {
-        if (matched_tracks[match.track_index] || matched_candidates[match.candidate_index]) {
-            continue;
-        }
-        matched_tracks[match.track_index] = true;
-        matched_candidates[match.candidate_index] = true;
-
-        auto& track = tracks_[match.track_index];
-        const auto& candidate = candidates[match.candidate_index];
-        track.missing_frames = 0;
-        if (track.sent) {
-            track.value.bounds = candidate.bounds;
-        } else if (track.value.normalized_text == candidate.normalized_text) {
-            track.value = candidate;
-            ++track.seen_frames;
-        } else {
-            track.value = candidate;
-            track.seen_frames = 1;
-        }
-    }
-
     const auto consume_for_sent_track =
         [&](std::size_t track_index, std::size_t candidate_index,
             bool refresh_full_bounds) {
@@ -121,10 +73,6 @@ std::optional<TextCandidate> TargetTracker::update(std::span<const TextCandidate
 
     for (std::size_t candidate_index = 0; candidate_index < candidates.size();
          ++candidate_index) {
-        if (matched_candidates[candidate_index]) {
-            continue;
-        }
-
         std::optional<std::size_t> closest_track;
         auto closest_distance = 0.0F;
         for (std::size_t track_index = 0; track_index < tracks_.size(); ++track_index) {
@@ -167,6 +115,60 @@ std::optional<TextCandidate> TargetTracker::update(std::span<const TextCandidate
         }
         if (closest_track) {
             consume_for_sent_track(*closest_track, candidate_index, false);
+        }
+    }
+
+    std::vector<Match> matches;
+    for (std::size_t track_index = 0; track_index < tracks_.size(); ++track_index) {
+        if (matched_tracks[track_index]) {
+            continue;
+        }
+        for (std::size_t candidate_index = 0; candidate_index < candidates.size();
+             ++candidate_index) {
+            if (matched_candidates[candidate_index]) {
+                continue;
+            }
+            if (tracks_[track_index].sent &&
+                tracks_[track_index].value.normalized_text !=
+                    candidates[candidate_index].normalized_text) {
+                continue;
+            }
+            const auto distance = center_distance(
+                tracks_[track_index].value, candidates[candidate_index]);
+            if (distance <= config_.max_center_distance_px &&
+                compatible_size(tracks_[track_index].value, candidates[candidate_index])) {
+                matches.push_back({distance, track_index, candidate_index});
+            }
+        }
+    }
+    std::ranges::sort(matches, [](const Match& left, const Match& right) {
+        if (left.distance != right.distance) {
+            return left.distance < right.distance;
+        }
+        if (left.track_index != right.track_index) {
+            return left.track_index < right.track_index;
+        }
+        return left.candidate_index < right.candidate_index;
+    });
+
+    for (const auto& match : matches) {
+        if (matched_tracks[match.track_index] || matched_candidates[match.candidate_index]) {
+            continue;
+        }
+        matched_tracks[match.track_index] = true;
+        matched_candidates[match.candidate_index] = true;
+
+        auto& track = tracks_[match.track_index];
+        const auto& candidate = candidates[match.candidate_index];
+        track.missing_frames = 0;
+        if (track.sent) {
+            track.value.bounds = candidate.bounds;
+        } else if (track.value.normalized_text == candidate.normalized_text) {
+            track.value = candidate;
+            ++track.seen_frames;
+        } else {
+            track.value = candidate;
+            track.seen_frames = 1;
         }
     }
 

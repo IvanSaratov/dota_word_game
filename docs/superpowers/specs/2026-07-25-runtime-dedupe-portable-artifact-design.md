@@ -87,12 +87,11 @@ A sent track retains:
 - the most recent full-size bounds;
 - its sent state and missing-frame count.
 
-Association remains one-to-one. Unsent tracks continue to use the existing
-distance-and-compatible-size match so that a changed OCR result resets their
-confirmation streak. A sent track uses that normal match only when the
-candidate's normalized text equals its canonical text; this prevents a distinct
-full-size word nearby from being swallowed by the sent track. Two sent-track
-suppression rules run before an unmatched candidate becomes a new track:
+Ordinary association remains one-to-one. Unsent tracks continue to use the
+existing distance-and-compatible-size match so that a changed OCR result resets
+their confirmation streak. Before ordinary spatial association, every
+candidate is offered to live sent tracks using the following authoritative
+ownership rules:
 
 1. If its normalized text exactly equals a live sent track's canonical text,
    the candidate is consumed by that sent track even when a detector gap caused
@@ -101,6 +100,12 @@ suppression rules run before an unmatched candidate becomes a new track:
 2. Otherwise, a candidate is consumed as a fragment when its area is at most
    65% of a live sent track's last full-size area and its center lies inside
    those bounds expanded on every side by `max_center_distance_px`.
+
+A candidate owned by either sent rule is unavailable to unsent tracks. The
+remaining candidates then enter the existing greedy one-to-one
+distance-and-compatible-size association. A different full-size word does not
+qualify for sent ownership and therefore remains eligible for ordinary
+association.
 
 A consumed fragment never replaces canonical text or shrinks the retained
 full-size bounds. It only keeps the sent track alive. This covers the observed
@@ -171,6 +176,8 @@ Tracker regression tests will reproduce the dry-run patterns:
 - `HYPE` near sent `HYPERSTONE` is consumed;
 - `EMA` near sent `BLADEMAIL` is consumed;
 - `RN` and `DIH` inside sent `BLOODTHORN` are consumed;
+- sent `BANE` owns later `BANE` observations before a competing unsent
+  `DECOY` track can claim them spatially;
 - a distinct full-size nearby word remains eligible;
 - the same canonical word becomes eligible after 15 consecutive missing
   frames.

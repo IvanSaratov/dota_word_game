@@ -118,6 +118,18 @@ TEST_CASE("temporary partial OCR does not unlock a sent moving target") {
     CHECK_FALSE(update_tracker(tracker, {word("BANE", 300)}));
 }
 
+TEST_CASE("sent exact ownership precedes a competing unsent spatial match") {
+    dk::TargetTracker tracker;
+    CHECK_FALSE(update_tracker(tracker, {word("BANE", 100)}));
+    auto ready = update_tracker(tracker, {word("BANE", 150)});
+    REQUIRE(ready);
+    tracker.mark_sent(*ready);
+
+    CHECK_FALSE(update_tracker(tracker, {word("DECOY", 300)}));
+    CHECK_FALSE(update_tracker(tracker, {word("BANE", 300)}));
+    CHECK_FALSE(update_tracker(tracker, {word("BANE", 300)}));
+}
+
 TEST_CASE("same word can be selected again after the old target disappears") {
     dk::TargetTracker tracker({.unlock_missing_frames = 2});
     CHECK_FALSE(update_tracker(tracker, {word("BANE", 100)}));
