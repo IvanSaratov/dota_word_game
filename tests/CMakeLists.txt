@@ -32,6 +32,11 @@ target_compile_definitions(main_win32_source_test PRIVATE
   DK_MAIN_WIN32_SOURCE_PATH="${PROJECT_SOURCE_DIR}/src/main_win32.cpp")
 add_test(NAME main_win32_source_test COMMAND main_win32_source_test)
 
+add_executable(region_selector_source_test region_selector_source_test.cpp)
+target_compile_definitions(region_selector_source_test PRIVATE
+  DK_REGION_SELECTOR_SOURCE_PATH="${PROJECT_SOURCE_DIR}/src/region_selector_win32.cpp")
+add_test(NAME region_selector_source_test COMMAND region_selector_source_test)
+
 add_executable(app_source_test app_source_test.cpp)
 target_compile_definitions(app_source_test PRIVATE
   DK_APP_SOURCE_PATH="${PROJECT_SOURCE_DIR}/src/app.cpp")

@@ -186,7 +186,8 @@ ATOM register_overlay_class() {
         window_class.cbSize = sizeof(window_class);
         window_class.lpfnWndProc = overlay_window_proc;
         window_class.hInstance = GetModuleHandleW(nullptr);
-        window_class.hCursor = LoadCursorW(nullptr, IDC_CROSS);
+        window_class.hCursor =
+            LoadCursorW(nullptr, MAKEINTRESOURCEW(OCR_CROSS));
         window_class.lpszClassName = overlay_class_name;
         atom = RegisterClassExW(&window_class);
         if (!atom) {
