@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstddef>
 #include <iomanip>
 #include <iostream>
 #include <vector>
@@ -14,6 +15,8 @@ namespace dk {
 namespace {
 
 using Clock = std::chrono::steady_clock;
+
+constexpr std::size_t kMinimumNormalizedLength = 2;
 
 const char* status_name(SendStatus status) noexcept {
     switch (status) {
@@ -89,7 +92,7 @@ bool App::process_one_frame() {
                   << selected_region_box.x << ',' << selected_region_box.y << ','
                   << selected_region_box.width << ',' << selected_region_box.height
                   << ")\n";
-        if (normalized.empty() ||
+        if (normalized.size() < kMinimumNormalizedLength ||
             recognized.confidence < config_.min_ocr_confidence) {
             continue;
         }
