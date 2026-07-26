@@ -7,21 +7,25 @@
 #endif
 #include <Windows.h>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <exception>
 #include <filesystem>
 #include <future>
-#include <iomanip>
 #include <iostream>
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <sstream>
 #include <stdexcept>
+#include <string>
 #include <string_view>
+#include <system_error>
 #include <thread>
 #include <utility>
+#include <vector>
 
 #include "dk/app.hpp"
 #include "dk/config.hpp"
@@ -30,8 +34,13 @@
 #include "dk/hotkey_state.hpp"
 #include "dk/ocr_recognizer.hpp"
 #include "dk/region_selector.hpp"
+#include "dk/session_log.hpp"
 #include "dk/win32_input_sink.hpp"
 #include "dk/window_locator.hpp"
+
+#ifndef DK_APP_VERSION
+#error "DK_APP_VERSION must contain the CMake project version"
+#endif
 
 namespace {
 
@@ -43,19 +52,40 @@ BOOL WINAPI console_control(DWORD) {
     return TRUE;
 }
 
-void print_stage(const char* name, const dk::StageSummary& stage) {
-    std::cout << name << ": n=" << stage.count << " mean=" << std::fixed
-              << std::setprecision(2) << stage.mean_ms << "ms median="
-              << stage.median_ms << "ms p95=" << stage.p95_ms << "ms\n";
+std::filesystem::path executable_directory() {
+    std::vector<wchar_t> buffer(MAX_PATH);
+    constexpr std::size_t maximum_path_characters = 32768;
+    while (buffer.size() <= maximum_path_characters) {
+        const DWORD copied = GetModuleFileNameW(
+            nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
+        if (copied == 0) {
+            throw std::system_error(
+                static_cast<int>(GetLastError()),
+                std::system_category(),
+                "resolve executable path");
+        }
+        if (copied < buffer.size()) {
+            return std::filesystem::path{
+                std::wstring{buffer.data(), copied}}.parent_path();
+        }
+        if (buffer.size() == maximum_path_characters) {
+            break;
+        }
+        buffer.resize(
+            std::min(buffer.size() * 2, maximum_path_characters));
+    }
+    throw std::runtime_error("Executable path exceeds the Windows path limit.");
 }
 
-void print_metrics(const dk::LatencyMetrics& metrics) {
-    const auto summary = metrics.summary();
-    std::cout << "\nLatency summary\n";
-    print_stage("capture", summary.capture);
-    print_stage("detect ", summary.detect);
-    print_stage("ocr    ", summary.ocr);
-    print_stage("total  ", summary.total);
+void write_bootstrap_failure(
+    const std::string& message,
+    std::ostream* file) {
+    const std::string record = "Fatal error: " + message + '\n';
+    std::cerr << record;
+    if (file != nullptr) {
+        *file << record;
+        file->flush();
+    }
 }
 
 std::optional<dk::Box> screen_region(HWND target, const dk::AppConfig& config) {
@@ -216,191 +246,267 @@ bool is_install_check(const int argc, wchar_t* argv[]) {
 int wmain(int argc, wchar_t* argv[]) {
     SetConsoleCtrlHandler(console_control, TRUE);
     try {
-        const bool install_check = is_install_check(argc, argv);
-        auto config = install_check ? dk::load_config("config.json") : load_startup_config();
-        dk::Logger logger{config.log_level, std::cout, std::cerr};
-        std::cout << "\n========================================\n"
-                  << (config.live_input ? "       LIVE INPUT ENABLED\n"
-                                        : "             DRY RUN\n")
-                  << "========================================\n"
-                  << "F7 calibrates. F8 starts or stops processing.\n";
-
-        dk::OcrRecognizer recognizer{
-            "assets/models/en_PP-OCRv5_rec_mobile_infer.onnx",
-            "assets/models/ppocrv5_en_dict.txt",
-        };
-        if (is_install_check(argc, argv)) {
-            std::cout << "Install check succeeded.\n";
-            return 0;
-        }
-        HotkeyController control{config.hotkeys};
-        dk::CancellationPredicate cancellation = [&control] {
-            return !keep_running.load(std::memory_order_acquire) ||
-                   control.quit_requested() ||
-                   !control.processing_enabled();
-        };
-
-        HWND target{};
-        if (config.region_configured && !config.window_title.empty()) {
-            const auto foreground = dk::WindowLocator::foreground();
-            if (foreground && foreground->title == config.window_title) {
-                target = foreground->handle;
-            } else {
-                std::cout << "Saved game window is not foreground; press F7 to bind it.\n";
+        const auto log_path =
+            executable_directory() / L"dota-keyboard.log";
+        dk::SessionLog session_log{log_path};
+        std::unique_ptr<dk::Logger> logger;
+        try {
+            const bool install_check = is_install_check(argc, argv);
+            auto config = install_check ? dk::load_config("config.json")
+                                        : load_startup_config();
+            logger = std::make_unique<dk::Logger>(
+                config.log_level,
+                std::cout,
+                std::cerr,
+                session_log.sink());
+            auto& runtime_logger = *logger;
+            runtime_logger.write(
+                dk::LogLevel::info,
+                "Dota Keyboard v" + std::string{DK_APP_VERSION} +
+                    " started; log_level=" +
+                    std::string{
+                        dk::configured_log_level_name(config.log_level)} +
+                    "; log_path=" + log_path.string());
+            if (!session_log.is_open()) {
+                runtime_logger.write(
+                    dk::LogLevel::warning,
+                    "Unable to open session log at " + log_path.string() +
+                        "; continuing with console logging.");
             }
-        } else if (config.region_configured) {
-            std::cout << "Saved window title is empty; press F7 to bind the game.\n";
-        } else {
-            std::cout << "No calibrated region; focus the game and press F7.\n";
-        }
+            runtime_logger.write(
+                dk::LogLevel::info,
+                std::string{config.live_input ? "LIVE INPUT ENABLED"
+                                              : "DRY RUN"} +
+                    "; F7 calibrates; F8 starts or stops processing.");
 
-        bool announced_processing{};
-        int consecutive_frame_errors{};
-        std::unique_ptr<Pipeline> pipeline;
-        auto next_metrics = std::chrono::steady_clock::now() +
-                            std::chrono::seconds{5};
-
-        while (keep_running.load(std::memory_order_acquire) &&
-               !control.quit_requested()) {
-            control.rethrow_if_failed();
-
-            if (control.take_calibration_request()) {
-                announced_processing = false;
-                consecutive_frame_errors = 0;
-                if (pipeline) {
-                    print_metrics(pipeline->app.metrics());
-                    pipeline.reset();
-                }
-
-                const auto binding = dk::WindowLocator::foreground();
-                if (!binding) {
-                    std::cerr << "F7: no usable foreground game window.\n";
-                    control.finish_calibration();
-                    continue;
-                }
-                const auto region =
-                    dk::RegionSelector::select(binding->handle, binding->client_bounds);
-                if (!region) {
-                    control.finish_calibration();
-                    std::cout << "Calibration cancelled"
-                              << (control.processing_enabled()
-                                      ? "; honoring the newer F8 request.\n"
-                                      : "; processing remains stopped.\n");
-                    continue;
-                }
-
-                auto calibrated = config;
-                calibrated.window_title = binding->title;
-                calibrated.region = *region;
-                calibrated.region_configured = true;
-                dk::save_config("config.json", calibrated);
-                config = calibrated;
-                target = binding->handle;
-                control.finish_calibration();
-                next_metrics = std::chrono::steady_clock::now() +
-                               std::chrono::seconds{5};
-                std::cout << "Calibration saved"
-                          << (control.processing_enabled()
-                                  ? "; processing will resume with rebuilt capture.\n"
-                                  : ".\n");
-                continue;
+            dk::OcrRecognizer recognizer{
+                "assets/models/en_PP-OCRv5_rec_mobile_infer.onnx",
+                "assets/models/ppocrv5_en_dict.txt",
+            };
+            if (is_install_check(argc, argv)) {
+                runtime_logger.write(
+                    dk::LogLevel::info, "Install check succeeded.");
+                return 0;
             }
+            HotkeyController control{config.hotkeys};
+            dk::CancellationPredicate cancellation = [&control] {
+                return !keep_running.load(std::memory_order_acquire) ||
+                       control.quit_requested() ||
+                       !control.processing_enabled();
+            };
 
-            if (control.processing_enabled() != announced_processing) {
-                if (!control.processing_enabled()) {
-                    announced_processing = false;
-                    std::cout << "STOPPED ("
-                              << (config.live_input ? "live mode" : "dry run")
-                              << " unchanged)\n";
-                } else if (!target || !IsWindow(target)) {
-                    std::cerr
-                        << "Cannot start: calibrate a live game window with F7.\n";
-                    control.stop_processing();
+            HWND target{};
+            if (config.region_configured && !config.window_title.empty()) {
+                const auto foreground = dk::WindowLocator::foreground();
+                if (foreground &&
+                    foreground->title == config.window_title) {
+                    target = foreground->handle;
                 } else {
-                    pipeline.reset();
-                    pipeline = build_pipeline(
-                        config, target, recognizer, logger, cancellation);
-                    announced_processing = true;
-                    consecutive_frame_errors = 0;
-                    next_metrics = std::chrono::steady_clock::now() +
-                                   std::chrono::seconds{5};
-                    std::cout << "RUNNING ("
-                              << (config.live_input ? "LIVE INPUT" : "DRY RUN")
-                              << ")\n";
+                    runtime_logger.write(
+                        dk::LogLevel::info,
+                        "Saved game window is not foreground; press F7 to bind it.");
                 }
+            } else if (config.region_configured) {
+                runtime_logger.write(
+                    dk::LogLevel::info,
+                    "Saved window title is empty; press F7 to bind the game.");
+            } else {
+                runtime_logger.write(
+                    dk::LogLevel::info,
+                    "No calibrated region; focus the game and press F7.");
             }
 
-            const auto now = std::chrono::steady_clock::now();
-            if (pipeline && now >= next_metrics) {
-                print_metrics(pipeline->app.metrics());
-                next_metrics = now + std::chrono::seconds{5};
-            }
-            if (target && !IsWindow(target)) {
-                std::cerr << "Game window was destroyed; stopping.\n";
-                break;
-            }
-            if (!target) {
-                std::this_thread::sleep_for(std::chrono::milliseconds{10});
-                continue;
-            }
-            if (!control.processing_enabled()) {
-                std::this_thread::sleep_for(std::chrono::milliseconds{10});
-                continue;
-            }
-            const auto current_region = screen_region(target, config);
-            if (!current_region) {
-                std::cerr
-                    << "Game client region became invalid; processing paused. "
-                       "Restore the window geometry or recalibrate with F7, then press F8.\n";
-                control.stop_processing();
-                announced_processing = false;
-                consecutive_frame_errors = 0;
-                pipeline.reset();
-                continue;
-            }
-            if (!pipeline ||
-                pipeline->capture_region != *current_region) {
-                pipeline.reset();
-                pipeline = build_pipeline(
-                    config, target, recognizer, logger, cancellation);
-                std::cout
-                    << "Game window moved; capture rebuilt before processing.\n";
-            }
+            bool announced_processing{};
+            int consecutive_frame_errors{};
+            std::unique_ptr<Pipeline> pipeline;
+            dk::MetricsSchedule metrics_schedule{
+                std::chrono::steady_clock::now()};
 
-            try {
-                if (!pipeline->app.process_one_frame()) {
-                    std::cerr << "Input was blocked or partial; stopping.\n";
-                    control.stop_processing();
+            while (keep_running.load(std::memory_order_acquire) &&
+                   !control.quit_requested()) {
+                control.rethrow_if_failed();
+
+                if (control.take_calibration_request()) {
+                    announced_processing = false;
+                    consecutive_frame_errors = 0;
+                    pipeline.reset();
+
+                    const auto binding = dk::WindowLocator::foreground();
+                    if (!binding) {
+                        runtime_logger.write(
+                            dk::LogLevel::warning,
+                            "F7: no usable foreground game window.");
+                        control.finish_calibration();
+                        continue;
+                    }
+                    const auto region = dk::RegionSelector::select(
+                        binding->handle, binding->client_bounds);
+                    if (!region) {
+                        control.finish_calibration();
+                        runtime_logger.write(
+                            dk::LogLevel::info,
+                            std::string{"Calibration cancelled"} +
+                                (control.processing_enabled()
+                                     ? "; honoring the newer F8 request."
+                                     : "; processing remains stopped."));
+                        continue;
+                    }
+
+                    auto calibrated = config;
+                    calibrated.window_title = binding->title;
+                    calibrated.region = *region;
+                    calibrated.region_configured = true;
+                    dk::save_config("config.json", calibrated);
+                    config = calibrated;
+                    target = binding->handle;
+                    control.finish_calibration();
+                    metrics_schedule.reset(
+                        std::chrono::steady_clock::now());
+                    runtime_logger.write(
+                        dk::LogLevel::info,
+                        std::string{"Calibration saved"} +
+                            (control.processing_enabled()
+                                 ? "; processing will resume with rebuilt capture."
+                                 : "."));
+                    continue;
+                }
+
+                if (control.processing_enabled() != announced_processing) {
+                    if (!control.processing_enabled()) {
+                        announced_processing = false;
+                        runtime_logger.write(
+                            dk::LogLevel::info,
+                            "STOPPED (" +
+                                std::string{config.live_input ? "live mode"
+                                                              : "dry run"} +
+                                " unchanged)");
+                    } else if (!target || !IsWindow(target)) {
+                        runtime_logger.write(
+                            dk::LogLevel::warning,
+                            "Cannot start: calibrate a live game window with F7.");
+                        control.stop_processing();
+                    } else {
+                        pipeline.reset();
+                        pipeline = build_pipeline(
+                            config,
+                            target,
+                            recognizer,
+                            runtime_logger,
+                            cancellation);
+                        announced_processing = true;
+                        consecutive_frame_errors = 0;
+                        metrics_schedule.reset(
+                            std::chrono::steady_clock::now());
+                        runtime_logger.write(
+                            dk::LogLevel::info,
+                            "RUNNING (" +
+                                std::string{config.live_input ? "LIVE INPUT"
+                                                              : "DRY RUN"} +
+                                ")");
+                    }
+                }
+
+                const auto now = std::chrono::steady_clock::now();
+                if (pipeline &&
+                    metrics_schedule.take_if_due(
+                        now, control.processing_enabled())) {
+                    runtime_logger.write(
+                        dk::LogLevel::info,
+                        dk::format_latency_summary(
+                            pipeline->app.metrics().summary()));
+                }
+                if (target && !IsWindow(target)) {
+                    runtime_logger.write(
+                        dk::LogLevel::error,
+                        "Game window was destroyed; stopping.");
                     break;
                 }
-                consecutive_frame_errors = 0;
-            } catch (const std::exception& error) {
-                ++consecutive_frame_errors;
-                std::cerr << "Frame processing error "
-                          << consecutive_frame_errors << '/'
-                          << maximum_consecutive_frame_errors << ": "
-                          << error.what()
-                          << "; discarding the frame and rebuilding capture.\n";
-                pipeline.reset();
-                if (consecutive_frame_errors >=
-                    maximum_consecutive_frame_errors) {
-                    std::cerr
-                        << "Too many consecutive frame errors; processing paused. "
-                           "Press F8 to retry or F7 to recalibrate.\n";
+                if (!target) {
+                    std::this_thread::sleep_for(
+                        std::chrono::milliseconds{10});
+                    continue;
+                }
+                if (!control.processing_enabled()) {
+                    std::this_thread::sleep_for(
+                        std::chrono::milliseconds{10});
+                    continue;
+                }
+                const auto current_region = screen_region(target, config);
+                if (!current_region) {
+                    runtime_logger.write(
+                        dk::LogLevel::warning,
+                        "Game client region became invalid; processing paused. "
+                        "Restore the window geometry or recalibrate with F7, "
+                        "then press F8.");
                     control.stop_processing();
                     announced_processing = false;
+                    consecutive_frame_errors = 0;
+                    pipeline.reset();
+                    continue;
                 }
-                continue;
-            }
-        }
+                if (!pipeline ||
+                    pipeline->capture_region != *current_region) {
+                    pipeline.reset();
+                    pipeline = build_pipeline(
+                        config,
+                        target,
+                        recognizer,
+                        runtime_logger,
+                        cancellation);
+                    metrics_schedule.reset(now);
+                    runtime_logger.write(
+                        dk::LogLevel::info,
+                        "Game window moved; capture rebuilt before processing.");
+                }
 
-        control.rethrow_if_failed();
-        if (pipeline) {
-            print_metrics(pipeline->app.metrics());
+                try {
+                    if (!pipeline->app.process_one_frame()) {
+                        runtime_logger.write(
+                            dk::LogLevel::warning,
+                            "Input was blocked or partial; stopping.");
+                        control.stop_processing();
+                        break;
+                    }
+                    consecutive_frame_errors = 0;
+                } catch (const std::exception& error) {
+                    ++consecutive_frame_errors;
+                    std::ostringstream message;
+                    message << "Frame processing error "
+                            << consecutive_frame_errors << '/'
+                            << maximum_consecutive_frame_errors << ": "
+                            << error.what()
+                            << "; discarding the frame and rebuilding capture.";
+                    runtime_logger.write(
+                        dk::LogLevel::warning, message.str());
+                    pipeline.reset();
+                    if (consecutive_frame_errors >=
+                        maximum_consecutive_frame_errors) {
+                        runtime_logger.write(
+                            dk::LogLevel::error,
+                            "Too many consecutive frame errors; processing "
+                            "paused. Press F8 to retry or F7 to recalibrate.");
+                        control.stop_processing();
+                        announced_processing = false;
+                    }
+                    continue;
+                }
+            }
+
+            control.rethrow_if_failed();
+            return 0;
+        } catch (const std::exception& error) {
+            if (logger) {
+                logger->write(
+                    dk::LogLevel::error,
+                    "Fatal error: " + std::string{error.what()});
+            } else {
+                write_bootstrap_failure(
+                    error.what(), session_log.sink());
+            }
+            return 1;
         }
-        return 0;
     } catch (const std::exception& error) {
-        std::cerr << "Fatal error: " << error.what() << '\n';
+        write_bootstrap_failure(error.what(), nullptr);
         return 1;
     }
 }

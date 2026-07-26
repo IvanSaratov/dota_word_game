@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cstddef>
 #include <deque>
+#include <string>
 
 namespace dk {
 
@@ -34,6 +35,25 @@ private:
     [[nodiscard]] static std::size_t index(LatencyStage stage) noexcept;
 
     std::array<std::deque<double>, 4> samples_;
+};
+
+[[nodiscard]] std::string format_latency_summary(
+    const LatencySummary& summary);
+
+class MetricsSchedule {
+public:
+    explicit MetricsSchedule(
+        std::chrono::steady_clock::time_point now,
+        std::chrono::seconds period = std::chrono::seconds{60});
+
+    bool take_if_due(
+        std::chrono::steady_clock::time_point now,
+        bool processing_active);
+    void reset(std::chrono::steady_clock::time_point now);
+
+private:
+    std::chrono::seconds period_;
+    std::chrono::steady_clock::time_point next_;
 };
 
 }  // namespace dk

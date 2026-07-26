@@ -59,6 +59,8 @@ if(WIN32)
 
   add_executable(dota_keyboard src/main_win32.cpp)
   target_link_libraries(dota_keyboard PRIVATE dk_core)
+  target_compile_definitions(dota_keyboard PRIVATE
+    DK_APP_VERSION="${PROJECT_VERSION}")
 endif()
 
 if(MSVC)
@@ -130,6 +132,8 @@ if(WIN32)
   set(CPACK_INNOSETUP_LANGUAGES "english;russian")
   set(CPACK_INNOSETUP_IGNORE_LICENSE_PAGE ON)
   set(CPACK_INNOSETUP_RUN_EXECUTABLES "dota_keyboard")
+  set(CPACK_INNOSETUP_EXTRA_SCRIPTS
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/InnoRuntimeCleanup.iss")
   set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY OFF)
   include(CPack)
 endif()

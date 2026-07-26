@@ -2,7 +2,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iomanip>
 #include <numeric>
+#include <sstream>
 #include <stdexcept>
 #include <vector>
 
@@ -49,6 +51,50 @@ LatencySummary LatencyMetrics::summary() const {
         summarize(samples_[index(LatencyStage::ocr)]),
         summarize(samples_[index(LatencyStage::total)]),
     };
+}
+
+std::string format_latency_summary(const LatencySummary& summary) {
+    std::ostringstream output;
+    output << std::fixed << std::setprecision(2) << "Latency summary ";
+    const auto append = [&output](
+                            const char* name,
+                            const StageSummary& stage,
+                            const bool trailing_space) {
+        output << name << "[n=" << stage.count << " mean=" << stage.mean_ms
+               << "ms median=" << stage.median_ms << "ms p95=" << stage.p95_ms
+               << "ms]";
+        if (trailing_space) {
+            output << ' ';
+        }
+    };
+    append("capture", summary.capture, true);
+    append("detect", summary.detect, true);
+    append("ocr", summary.ocr, true);
+    append("total", summary.total, false);
+    return output.str();
+}
+
+MetricsSchedule::MetricsSchedule(
+    const std::chrono::steady_clock::time_point now,
+    const std::chrono::seconds period)
+    : period_(period),
+      next_(now + period_) {}
+
+bool MetricsSchedule::take_if_due(
+    const std::chrono::steady_clock::time_point now,
+    const bool processing_active) {
+    if (!processing_active || now < next_) {
+        return false;
+    }
+    do {
+        next_ += period_;
+    } while (next_ <= now);
+    return true;
+}
+
+void MetricsSchedule::reset(
+    const std::chrono::steady_clock::time_point now) {
+    next_ = now + period_;
 }
 
 }  // namespace dk
