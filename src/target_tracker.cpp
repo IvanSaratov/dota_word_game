@@ -64,7 +64,8 @@ bool is_fragment(
 
 TargetTracker::TargetTracker(TrackerConfig config) : config_(config) {}
 
-std::optional<TextCandidate> TargetTracker::update(std::span<const TextCandidate> candidates) {
+TrackerFrame TargetTracker::update_lines(
+    std::span<const TextCandidate> candidates) {
     struct Match {
         float distance;
         std::size_t track_index;
@@ -229,20 +230,52 @@ std::optional<TextCandidate> TargetTracker::update(std::span<const TextCandidate
     for (std::size_t candidate_index = 0; candidate_index < candidates.size();
          ++candidate_index) {
         if (!matched_candidates[candidate_index]) {
-            tracks_.push_back({candidates[candidate_index]});
+            tracks_.push_back({
+                .id = next_id_++,
+                .value = candidates[candidate_index],
+            });
         }
     }
 
-    std::optional<TextCandidate> result;
+    TrackerFrame frame;
+    frame.lines.reserve(tracks_.size());
     for (const auto& track : tracks_) {
-        if (track.sent || track.missing_frames != 0 ||
-            track.seen_frames < config_.confirm_frames ||
-            (result && track.value.bounds.bottom() <= result->bounds.bottom())) {
+        frame.lines.push_back({
+            .id = track.id,
+            .value = track.value,
+            .seen_frames = track.seen_frames,
+            .missing_frames = track.missing_frames,
+            .confirmed = track.seen_frames >= config_.confirm_frames,
+            .sent = track.sent,
+            .observed_this_frame = track.missing_frames == 0,
+        });
+    }
+    return frame;
+}
+
+std::optional<TextCandidate> TargetTracker::update(
+    std::span<const TextCandidate> candidates) {
+    const auto frame = update_lines(candidates);
+    std::optional<TextCandidate> result;
+    for (const auto& line : frame.lines) {
+        if (line.sent || !line.observed_this_frame || !line.confirmed ||
+            (result &&
+             line.value.bounds.bottom() <= result->bounds.bottom())) {
             continue;
         }
-        result = track.value;
+        result = line.value;
     }
     return result;
+}
+
+void TargetTracker::mark_sent(std::span<const TrackId> ids) {
+    for (const auto id : ids) {
+        const auto track = std::ranges::find(
+            tracks_, id, &Track::id);
+        if (track != tracks_.end()) {
+            track->sent = true;
+        }
+    }
 }
 
 void TargetTracker::mark_sent(const TextCandidate& candidate) {
