@@ -32,6 +32,7 @@ private:
         int clean_frames{};
         bool ambiguous{};
         bool grouped{};
+        bool provisional{};
     };
 
     std::map<std::pair<TrackId, TrackId>, PairState> pairs_;

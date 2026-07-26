@@ -111,6 +111,7 @@ std::vector<CompoundTarget> CompoundTargetAssembler::update(
                     .relative_x = relative_x,
                     .relative_y = relative_y,
                     .stable_frames = 1,
+                    .provisional = true,
                 });
                 continue;
             }
@@ -124,6 +125,9 @@ std::vector<CompoundTarget> CompoundTargetAssembler::update(
             state.relative_y = relative_y;
             if (stable) {
                 ++state.stable_frames;
+                if (!state.grouped && state.stable_frames >= 2) {
+                    state.provisional = true;
+                }
                 if (state.ambiguous) {
                     ++state.clean_frames;
                     if (state.clean_frames >= 2) {
@@ -133,12 +137,15 @@ std::vector<CompoundTarget> CompoundTargetAssembler::update(
             } else {
                 if (state.grouped) {
                     state.ambiguous = true;
+                } else {
+                    state.provisional = false;
                 }
                 state.stable_frames = 1;
                 state.clean_frames = 0;
             }
             if (state.stable_frames >= 3) {
                 state.grouped = true;
+                state.provisional = false;
             }
         }
     }
@@ -210,16 +217,16 @@ std::vector<CompoundTarget> CompoundTargetAssembler::update(
             target.sent_owned = target.sent_owned || member->sent;
         }
         for (const auto& [key, state] : pairs_) {
-            if (!state.grouped || !state.ambiguous) {
-                continue;
-            }
             const auto contains = [&](TrackId id) {
                 return std::ranges::find(
                            target.line_ids, id) != target.line_ids.end();
             };
             target.ambiguous =
                 target.ambiguous ||
-                (contains(key.first) && contains(key.second));
+                (state.grouped && state.ambiguous &&
+                 contains(key.first) && contains(key.second)) ||
+                (!state.grouped && state.provisional &&
+                 (contains(key.first) || contains(key.second)));
         }
         targets.push_back(std::move(target));
     }
