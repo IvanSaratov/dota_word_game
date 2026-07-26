@@ -485,6 +485,33 @@ TEST_CASE("app never sends a merged OCR line born during unresolved overlap") {
     }
 }
 
+TEST_CASE("app rejects a merged OCR line that appears after an overlap gap") {
+    auto config = dk::AppConfig::defaults();
+    config.live_input = true;
+    FakeFrameSource frames{6};
+    SequencedDetector detector{{
+        {{100, 100, 220, 40}, {100, 155, 220, 40}},
+        {{100, 110, 220, 40}, {100, 165, 220, 40}},
+        {},
+        {},
+        {{100, 120, 220, 95}},
+        {{100, 120, 220, 95}},
+    }};
+    FakeRecognizer recognizer{{
+        {"TOP", .99F}, {"BOTTOM", .99F},
+        {"TOP", .99F}, {"BOTTOM", .99F},
+        {"TOPBOTTOM", .99F},
+        {"TOPBOTTOM", .99F},
+    }};
+    FakeInputSink input;
+    dk::App app(config, frames, detector, recognizer, input, {}, complete_delay);
+
+    for (int frame = 0; frame < 6; ++frame) {
+        CHECK(app.process_one_frame());
+        CHECK(input.sent.empty());
+    }
+}
+
 TEST_CASE("app keeps sent compound ownership when split lines merge") {
     auto config = dk::AppConfig::defaults();
     config.live_input = true;
@@ -512,6 +539,39 @@ TEST_CASE("app keeps sent compound ownership when split lines merge") {
 
     REQUIRE(input.sent ==
             std::vector<std::string>{"PHANTOMASSASSIN"});
+}
+
+TEST_CASE("sent compound alias releases when its OCR text changes") {
+    auto config = dk::AppConfig::defaults();
+    config.live_input = true;
+    FakeFrameSource frames{7};
+    SequencedDetector detector{{
+        {{100, 100, 220, 40}, {100, 155, 220, 40}},
+        {{100, 110, 220, 40}, {100, 165, 220, 40}},
+        {{100, 120, 220, 40}, {100, 175, 220, 40}},
+        {{100, 120, 220, 95}},
+        {{100, 120, 220, 95}},
+        {{100, 120, 220, 95}},
+        {{100, 120, 220, 95}},
+    }};
+    FakeRecognizer recognizer{{
+        {"PHANTOM", .99F}, {"ASSASSIN", .99F},
+        {"PHANTOM", .99F}, {"ASSASSIN", .99F},
+        {"PHANTOM", .99F}, {"ASSASSIN", .99F},
+        {"PHANTOMASSASSIN", .99F},
+        {"PHANTOMASSASSIN", .99F},
+        {"FRESH", .99F},
+        {"FRESH", .99F},
+    }};
+    FakeInputSink input;
+    dk::App app(config, frames, detector, recognizer, input, {}, complete_delay);
+
+    for (int frame = 0; frame < 7; ++frame) {
+        CHECK(app.process_one_frame());
+    }
+
+    REQUIRE(input.sent ==
+            std::vector<std::string>{"PHANTOMASSASSIN", "FRESH"});
 }
 
 TEST_CASE("post-send pacing receives live cancellation state") {
