@@ -78,7 +78,8 @@ target_compile_definitions(packaging_cmake_source_test PRIVATE
   DK_ROOT_CMAKE_PATH="${PROJECT_SOURCE_DIR}/CMakeLists.txt"
   DK_PACKAGE_PROJECT_CONFIG_PATH="${PROJECT_SOURCE_DIR}/cmake/PackageProjectConfig.cmake"
   DK_CMAKE_PRESETS_PATH="${PROJECT_SOURCE_DIR}/CMakePresets.json"
-  DK_VCPKG_TRIPLET_PATH="${PROJECT_SOURCE_DIR}/cmake/triplets/x64-windows-dota.cmake")
+  DK_VCPKG_TRIPLET_PATH="${PROJECT_SOURCE_DIR}/cmake/triplets/x64-windows-dota.cmake"
+  DK_INNO_EXTRA_SCRIPT_PATH="${PROJECT_SOURCE_DIR}/cmake/InnoRuntimeCleanup.iss")
 add_test(NAME packaging_cmake_source_test COMMAND packaging_cmake_source_test)
 
 add_executable(windows_workflow_source_test windows_workflow_source_test.cpp)

@@ -19,6 +19,10 @@
 #error "DK_VCPKG_TRIPLET_PATH must name the project vcpkg triplet"
 #endif
 
+#ifndef DK_INNO_EXTRA_SCRIPT_PATH
+#error "DK_INNO_EXTRA_SCRIPT_PATH must name the Inno Setup extra script"
+#endif
+
 int main() {
     std::ifstream input{DK_ROOT_CMAKE_PATH};
     const std::string source{
@@ -75,6 +79,32 @@ int main() {
             R"("${CMAKE_CURRENT_SOURCE_DIR}/cmake/PackageProjectConfig.cmake")") ==
             std::string::npos) {
         std::cerr << "CPack must load PackageProjectConfig.cmake for each generator\n";
+        return 1;
+    }
+    if (source.find("set(CPACK_INNOSETUP_EXTRA_SCRIPTS") ==
+            std::string::npos ||
+        source.find(
+            R"("${CMAKE_CURRENT_SOURCE_DIR}/cmake/InnoRuntimeCleanup.iss")") ==
+            std::string::npos) {
+        std::cerr
+            << "the installer must include runtime log cleanup instructions\n";
+        return 1;
+    }
+
+    std::ifstream inno_script_input{DK_INNO_EXTRA_SCRIPT_PATH};
+    const std::string inno_script_source{
+        std::istreambuf_iterator<char>{inno_script_input},
+        std::istreambuf_iterator<char>{}};
+    if (!inno_script_input || inno_script_input.bad()) {
+        std::cerr << "could not read the Inno Setup extra script\n";
+        return 1;
+    }
+    if (inno_script_source.find("[UninstallDelete]") == std::string::npos ||
+        inno_script_source.find(
+            R"(Type: files; Name: "{app}\dota-keyboard.log")") ==
+            std::string::npos) {
+        std::cerr
+            << "uninstall must remove the runtime-created dota-keyboard.log\n";
         return 1;
     }
 
