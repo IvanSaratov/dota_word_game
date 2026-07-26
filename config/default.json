@@ -10,6 +10,7 @@
   "live_input": false,
   "min_ocr_confidence": 0.8,
   "inter_key_delay_us": 0,
+  "post_send_delay_ms": 100,
   "detector": {
     "luminance_threshold": 145,
     "min_char_height_ratio": 0.025,

@@ -22,6 +22,7 @@ struct AppConfig {
     bool live_input{false};
     float min_ocr_confidence{0.80F};
     int inter_key_delay_us{0};
+    int post_send_delay_ms{100};
     DetectorConfig detector;
     TrackerConfig tracker;
     HotkeyConfig hotkeys;

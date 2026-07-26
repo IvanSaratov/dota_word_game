@@ -192,6 +192,10 @@ void validate(const AppConfig& config) {
     if (config.inter_key_delay_us < 0) {
         throw std::invalid_argument("inter-key delay cannot be negative");
     }
+    if (config.post_send_delay_ms < 0 || config.post_send_delay_ms > 5000) {
+        throw std::invalid_argument(
+            "post_send_delay_ms must be between 0 and 5000");
+    }
     if (config.hotkeys.calibrate == config.hotkeys.toggle) {
         throw std::invalid_argument("calibrate and toggle hotkeys must differ");
     }
@@ -299,6 +303,7 @@ std::string serialize_config(const AppConfig& config) {
         {"live_input", config.live_input},
         {"min_ocr_confidence", config.min_ocr_confidence},
         {"inter_key_delay_us", config.inter_key_delay_us},
+        {"post_send_delay_ms", config.post_send_delay_ms},
         {"detector", detector_to_json(config.detector)},
         {"tracker",
          {
@@ -328,6 +333,12 @@ AppConfig parse_config(std::string_view text) {
     config.min_ocr_confidence =
         json.value("min_ocr_confidence", config.min_ocr_confidence);
     config.inter_key_delay_us = json.value("inter_key_delay_us", config.inter_key_delay_us);
+    if (const auto iterator = json.find("post_send_delay_ms");
+        iterator != json.end() && !iterator->is_number_integer()) {
+        throw std::invalid_argument("post_send_delay_ms must be an integer");
+    }
+    config.post_send_delay_ms =
+        json.value("post_send_delay_ms", config.post_send_delay_ms);
     if (const auto iterator = json.find("detector"); iterator != json.end()) {
         read_detector(*iterator, config.detector);
     }
