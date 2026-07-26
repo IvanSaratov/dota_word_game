@@ -192,10 +192,15 @@ std::vector<CompoundTarget> CompoundTargetAssembler::update(
                 return sent.line_ids.contains(id);
             });
     };
-    const auto released_sent_alias = [&](TrackId id) {
+    const auto released_sent_alias = [&](
+        const PairKey& cause, const LineTrackSnapshot& line) {
         return std::ranges::any_of(
             sent_compounds_, [&](const auto& sent) {
-                return sent.released_aliases.contains(id);
+                const auto alias = sent.released_aliases.find(line.id);
+                return sent.line_ids.contains(cause.first) &&
+                       sent.line_ids.contains(cause.second) &&
+                       alias != sent.released_aliases.end() &&
+                       alias->second == line.value.normalized_text;
             });
     };
     for (auto& [key, episode] : ambiguity_episodes_) {
@@ -222,7 +227,7 @@ std::vector<CompoundTarget> CompoundTargetAssembler::update(
             if (!line.observed_this_frame ||
                 line.id == key.first || line.id == key.second ||
                 sent_owned_id(line.id) ||
-                released_sent_alias(line.id)) {
+                released_sent_alias(key, line)) {
                 continue;
             }
             const auto overlaps_missing_member =
