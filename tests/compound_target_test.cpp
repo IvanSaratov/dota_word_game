@@ -35,14 +35,21 @@ std::vector<dk::CompoundTarget> update(
 TEST_CASE("common motion groups lines only after three observations") {
     dk::CompoundTargetAssembler assembler;
 
-    CHECK(update(assembler, {
-              line(1, "PHANTOM", {100, 100, 220, 40}),
-              line(2, "ASSASSIN", {100, 155, 220, 40}),
-          }).size() == 2);
-    CHECK(update(assembler, {
-              line(1, "PHANTOM", {100, 110, 220, 40}),
-              line(2, "ASSASSIN", {100, 165, 220, 40}),
-          }).size() == 2);
+    auto provisional = update(assembler, {
+        line(1, "PHANTOM", {100, 100, 220, 40}),
+        line(2, "ASSASSIN", {100, 155, 220, 40}),
+    });
+    REQUIRE(provisional.size() == 2);
+    CHECK(provisional.front().ambiguous);
+    CHECK(provisional.back().ambiguous);
+
+    provisional = update(assembler, {
+        line(1, "PHANTOM", {100, 110, 220, 40}),
+        line(2, "ASSASSIN", {100, 165, 220, 40}),
+    });
+    REQUIRE(provisional.size() == 2);
+    CHECK(provisional.front().ambiguous);
+    CHECK(provisional.back().ambiguous);
 
     const auto grouped = update(assembler, {
         line(1, "PHANTOM", {100, 120, 220, 40}),
