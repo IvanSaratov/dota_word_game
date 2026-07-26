@@ -112,11 +112,16 @@ std::vector<CompoundTarget> CompoundTargetAssembler::update(
         std::erase_if(sent.line_ids, [&](TrackId id) {
             return !id_is_present(id);
         });
+        std::erase_if(sent.released_aliases, [&](const auto& alias) {
+            return !id_is_present(alias.first);
+        });
         for (const auto& line : lines) {
             if (line.observed_this_frame && !line.sent &&
                 sent.line_ids.contains(line.id) &&
                 line.value.normalized_text != sent.normalized_text) {
                 sent.line_ids.erase(line.id);
+                sent.released_aliases.insert_or_assign(
+                    line.id, line.value.normalized_text);
             }
         }
         if (sent.line_ids.empty()) {
@@ -143,6 +148,7 @@ std::vector<CompoundTarget> CompoundTargetAssembler::update(
                 line.value.normalized_text == sent.normalized_text &&
                 expanded_boxes_connect(line.value.bounds, sent.bounds)) {
                 sent.line_ids.insert(line.id);
+                sent.released_aliases.erase(line.id);
             }
         }
         return false;
@@ -172,8 +178,7 @@ std::vector<CompoundTarget> CompoundTargetAssembler::update(
             std::ranges::find(lines, key.first, &LineTrackSnapshot::id);
         const auto right =
             std::ranges::find(lines, key.second, &LineTrackSnapshot::id);
-        if ((left->observed_this_frame && right->observed_this_frame) ||
-            (left->sent && right->sent)) {
+        if (left->observed_this_frame && right->observed_this_frame) {
             continue;
         }
         auto& episode = ambiguity_episodes_[key];
@@ -181,6 +186,18 @@ std::vector<CompoundTarget> CompoundTargetAssembler::update(
         episode.clean_frames = 0;
     }
 
+    const auto sent_owned_id = [&](TrackId id) {
+        return std::ranges::any_of(
+            sent_compounds_, [&](const auto& sent) {
+                return sent.line_ids.contains(id);
+            });
+    };
+    const auto released_sent_alias = [&](TrackId id) {
+        return std::ranges::any_of(
+            sent_compounds_, [&](const auto& sent) {
+                return sent.released_aliases.contains(id);
+            });
+    };
     for (auto& [key, episode] : ambiguity_episodes_) {
         if (!episode.active) {
             continue;
@@ -189,8 +206,7 @@ std::vector<CompoundTarget> CompoundTargetAssembler::update(
             std::ranges::find(lines, key.first, &LineTrackSnapshot::id);
         const auto right =
             std::ranges::find(lines, key.second, &LineTrackSnapshot::id);
-        if (left == lines.end() || right == lines.end() ||
-            (left->sent && right->sent)) {
+        if (left == lines.end() || right == lines.end()) {
             episode.active = false;
             continue;
         }
@@ -204,7 +220,9 @@ std::vector<CompoundTarget> CompoundTargetAssembler::update(
         episode.clean_frames = 0;
         for (const auto& line : lines) {
             if (!line.observed_this_frame ||
-                line.id == key.first || line.id == key.second) {
+                line.id == key.first || line.id == key.second ||
+                sent_owned_id(line.id) ||
+                released_sent_alias(line.id)) {
                 continue;
             }
             const auto overlaps_missing_member =

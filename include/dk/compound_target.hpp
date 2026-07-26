@@ -41,6 +41,7 @@ private:
 
     struct SentCompound {
         std::set<TrackId> line_ids;
+        std::map<TrackId, std::string> released_aliases;
         std::string normalized_text;
         Box bounds;
     };
