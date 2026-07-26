@@ -54,9 +54,7 @@ function Assert-Validation {
   $output = @(& $powerShellPath @argumentList 2>&1)
   $exitCode = $LASTEXITCODE
   $succeeded = $exitCode -eq 0
-  $renderedOutput = (
-    $output | ForEach-Object { $_.ToString() }
-  ) -join [Environment]::NewLine
+  $renderedOutput = ($output | Out-String).Trim()
 
   if ($succeeded -ne $ShouldSucceed) {
     throw "$Name expected success=$ShouldSucceed, got exit code $exitCode.`n$renderedOutput"
@@ -140,7 +138,7 @@ project(dota_keyboard VERSION 0.1.0 LANGUAGES CXX)
     -Commit $featureCommit `
     -MainRef 'refs/remotes/origin/main' `
     -ShouldSucceed $false `
-    -ExpectedText 'is not an ancestor of'
+    -ExpectedText 'is not an ancestor'
 
   Assert-Validation `
     -Name 'commit cannot be resolved' `
