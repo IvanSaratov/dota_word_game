@@ -23,11 +23,37 @@ void check_rejected(Mutation mutation) {
 TEST_CASE("default configuration is safe") {
     const auto config = dk::AppConfig::defaults();
     CHECK_FALSE(config.live_input);
+    CHECK(config.log_level == dk::LogLevel::info);
     CHECK(config.min_ocr_confidence == Catch::Approx(0.80F));
     CHECK(config.tracker.confirm_frames == 2);
     CHECK(config.tracker.unlock_missing_frames == 15);
     CHECK(config.hotkeys.calibrate == 0x76);  // F7
     CHECK(config.hotkeys.toggle == 0x77);     // F8
+}
+
+TEST_CASE("log level has a strict JSON contract") {
+    CHECK(dk::parse_config(R"({})").log_level == dk::LogLevel::info);
+    CHECK(dk::parse_config(R"({"log_level":"info"})").log_level ==
+          dk::LogLevel::info);
+
+    const auto debug = dk::parse_config(R"({"log_level":"debug"})");
+    CHECK(debug.log_level == dk::LogLevel::debug);
+    CHECK(dk::parse_config(dk::serialize_config(debug)).log_level ==
+          dk::LogLevel::debug);
+    CHECK(dk::serialize_config(debug).find(R"("log_level": "debug")") !=
+          std::string::npos);
+
+    for (const auto* invalid : {
+             R"({"log_level":"INFO"})",
+             R"({"log_level":"trace"})",
+             R"({"log_level":null})",
+             R"({"log_level":1})",
+             R"({"log_level":true})",
+         }) {
+        CHECK_THROWS_WITH(
+            dk::parse_config(invalid),
+            Catch::Matchers::ContainsSubstring("log_level"));
+    }
 }
 
 TEST_CASE("region round-trips in client-relative coordinates") {
