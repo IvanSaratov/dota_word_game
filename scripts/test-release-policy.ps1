@@ -54,7 +54,9 @@ function Assert-Validation {
   $output = @(& $powerShellPath @argumentList 2>&1)
   $exitCode = $LASTEXITCODE
   $succeeded = $exitCode -eq 0
-  $renderedOutput = ($output | Out-String).Trim()
+  $renderedOutput = (
+    $output | ForEach-Object { $_.ToString() }
+  ) -join [Environment]::NewLine
 
   if ($succeeded -ne $ShouldSucceed) {
     throw "$Name expected success=$ShouldSucceed, got exit code $exitCode.`n$renderedOutput"
