@@ -10,6 +10,8 @@ find_package(onnxruntime CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 
 add_library(dk_core
+  src/logger.cpp
+  src/session_log.cpp
   src/text_normalizer.cpp
   src/target_tracker.cpp
   src/compound_target.cpp

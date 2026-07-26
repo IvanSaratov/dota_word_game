@@ -20,6 +20,14 @@ dk_add_test(delay_test delay_test.cpp)
 dk_add_test(input_sink_test input_sink_test.cpp)
 dk_add_test(app_test app_test.cpp)
 
+add_executable(logger_test logger_test.cpp)
+target_link_libraries(logger_test PRIVATE dk_core)
+add_test(NAME logger_test COMMAND logger_test)
+
+add_executable(session_log_test session_log_test.cpp)
+target_link_libraries(session_log_test PRIVATE dk_core)
+add_test(NAME session_log_test COMMAND session_log_test)
+
 add_executable(ocr_logging_source_test ocr_logging_source_test.cpp)
 target_compile_definitions(ocr_logging_source_test PRIVATE
   DK_OCR_RECOGNIZER_SOURCE_PATH="${PROJECT_SOURCE_DIR}/src/ocr_recognizer.cpp")
