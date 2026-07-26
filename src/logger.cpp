@@ -57,8 +57,8 @@ void Logger::write(const LogLevel level, const std::string_view message) {
         return;
     }
 
-    const auto record = format_record(clock_(), level, message);
     std::lock_guard lock{mutex_};
+    const auto record = format_record(clock_(), level, message);
     auto& console =
         level >= LogLevel::warning ? err_ : out_;
     console << record;

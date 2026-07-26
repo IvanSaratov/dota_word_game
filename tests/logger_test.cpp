@@ -5,6 +5,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <iostream>
+#include <latch>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -136,6 +137,46 @@ void test_concurrent_records_remain_complete() {
     }
 }
 
+void test_clock_and_record_serialization_share_the_write_lock() {
+    std::ostringstream out;
+    std::ostringstream err;
+    std::atomic<int> active_calls{};
+    std::atomic<int> maximum_active_calls{};
+    std::atomic<int> timestamp_index{};
+    const auto epoch = std::chrono::system_clock::time_point{};
+    const dk::LogClock probing_clock = [&] {
+        const auto active = ++active_calls;
+        auto maximum = maximum_active_calls.load();
+        while (active > maximum &&
+               !maximum_active_calls.compare_exchange_weak(maximum, active)) {
+        }
+        std::this_thread::sleep_for(5ms);
+        const auto index = timestamp_index++;
+        --active_calls;
+        return epoch + std::chrono::milliseconds{index};
+    };
+    dk::Logger logger{
+        dk::LogLevel::debug, out, err, nullptr, probing_clock};
+
+    constexpr int writer_count = 16;
+    std::latch start{writer_count};
+    std::vector<std::thread> writers;
+    for (int index = 0; index < writer_count; ++index) {
+        writers.emplace_back([index, &logger, &start] {
+            start.count_down();
+            start.wait();
+            logger.write(
+                dk::LogLevel::debug, "serialized-" + std::to_string(index));
+        });
+    }
+    for (auto& writer : writers) {
+        writer.join();
+    }
+
+    require(maximum_active_calls == 1,
+            "stateful clock calls must be serialized with record writes");
+}
+
 }  // namespace
 
 int main() {
@@ -143,4 +184,5 @@ int main() {
     test_names_filtering_and_routing();
     test_file_is_flushed_after_each_record();
     test_concurrent_records_remain_complete();
+    test_clock_and_record_serialization_share_the_write_lock();
 }
