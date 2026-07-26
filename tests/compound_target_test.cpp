@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <initializer_list>
 #include <span>
 #include <string>
@@ -166,4 +167,88 @@ TEST_CASE("compound ownership and observation include every member line") {
     });
     REQUIRE(targets.size() == 1);
     CHECK_FALSE(targets.front().observed_this_frame);
+}
+
+TEST_CASE("provisional disappearance releases the unchanged survivor") {
+    dk::CompoundTargetAssembler assembler;
+    update(assembler, {
+        line(1, "SURVIVOR", {100, 100, 180, 40}),
+        line(2, "MISSING", {100, 155, 180, 40}),
+    });
+    update(assembler, {
+        line(1, "SURVIVOR", {100, 108, 180, 40}),
+        line(2, "MISSING", {100, 163, 180, 40}),
+    });
+
+    auto targets = update(assembler, {
+        line(1, "SURVIVOR", {100, 116, 180, 40}),
+        line(2, "MISSING", {100, 163, 180, 40}, false, false),
+    });
+    const auto first_recovery = std::ranges::find_if(
+        targets, [](const auto& target) {
+            return target.line_ids == std::vector<dk::TrackId>{1};
+        });
+    REQUIRE(first_recovery != targets.end());
+    CHECK(first_recovery->ambiguous);
+
+    targets = update(assembler, {
+        line(1, "SURVIVOR", {100, 124, 180, 40}),
+        line(2, "MISSING", {100, 163, 180, 40}, false, false),
+    });
+    const auto recovered = std::ranges::find_if(
+        targets, [](const auto& target) {
+            return target.line_ids == std::vector<dk::TrackId>{1};
+        });
+    REQUIRE(recovered != targets.end());
+    CHECK_FALSE(recovered->ambiguous);
+    CHECK(recovered->observed_this_frame);
+}
+
+TEST_CASE("grouped lines dissolve after two uniquely separated frames") {
+    dk::CompoundTargetAssembler assembler;
+    for (int frame = 0; frame < 3; ++frame) {
+        update(assembler, {
+            line(1, "FIRST", {100, 100 + frame * 8, 180, 40}),
+            line(2, "SECOND", {100, 155 + frame * 8, 180, 40}),
+        });
+    }
+
+    auto targets = update(assembler, {
+        line(1, "FIRST", {100, 124, 180, 40}),
+        line(2, "SECOND", {600, 179, 180, 40}),
+    });
+    REQUIRE(targets.size() == 1);
+    CHECK(targets.front().ambiguous);
+
+    targets = update(assembler, {
+        line(1, "FIRST", {100, 132, 180, 40}),
+        line(2, "SECOND", {600, 187, 180, 40}),
+    });
+    REQUIRE(targets.size() == 2);
+    CHECK_FALSE(targets.front().ambiguous);
+    CHECK_FALSE(targets.back().ambiguous);
+}
+
+TEST_CASE("provisional proximity never transfers sent ownership") {
+    dk::CompoundTargetAssembler assembler;
+    update(assembler, {
+        line(1, "SENT", {100, 100, 180, 40}),
+        line(2, "OTHER", {100, 155, 180, 40}),
+    });
+    update(assembler, {
+        line(1, "SENT", {100, 108, 180, 40}),
+        line(2, "OTHER", {130, 155, 180, 40}),
+    });
+
+    const auto targets = update(assembler, {
+        line(1, "SENT", {100, 108, 180, 40}, true, false),
+        line(2, "OTHER", {130, 155, 180, 40}, false, false),
+        line(3, "FRESH", {100, 110, 180, 40}),
+    });
+    const auto fresh = std::ranges::find_if(
+        targets, [](const auto& target) {
+            return target.line_ids == std::vector<dk::TrackId>{3};
+        });
+    REQUIRE(fresh != targets.end());
+    CHECK_FALSE(fresh->sent_owned);
 }
