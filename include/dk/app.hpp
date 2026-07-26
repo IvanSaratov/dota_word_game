@@ -18,7 +18,9 @@ public:
     App(const AppConfig& config, FrameSource& frames, CandidateDetector& detector,
         LineRecognizer& recognizer, InputSink& input,
         CancellationPredicate cancellation = {},
-        DelayFunction delay = interruptible_delay);
+        DelayFunction delay = static_cast<bool (*)(
+            std::chrono::milliseconds, const CancellationPredicate&)>(
+            interruptible_delay));
     bool process_one_frame();
     [[nodiscard]] const std::optional<TextCandidate>& last_result() const noexcept;
     [[nodiscard]] const LatencyMetrics& metrics() const noexcept;
