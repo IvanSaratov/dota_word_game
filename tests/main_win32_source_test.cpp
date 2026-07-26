@@ -75,6 +75,30 @@ int main() {
         source,
         "dk::CancellationPredicate cancellation",
         "App and InputSink must share the immediate-stop predicate");
+    valid &= require_text(
+        source,
+        "GetModuleFileNameW",
+        "the log path must be resolved from the executable path");
+    valid &= require_text(
+        source,
+        "dota-keyboard.log",
+        "the automatic session log must have the approved filename");
+    valid &= require_text(
+        source,
+        "dk::SessionLog session_log",
+        "startup must own a truncating session log");
+    valid &= require_text(
+        source,
+        "session_log.sink()",
+        "Logger must receive the optional session file sink");
+    valid &= require_text(
+        source,
+        "DK_APP_VERSION",
+        "startup must identify the compiled application version");
+    valid &= require_text(
+        source,
+        "configured_log_level_name(config.log_level)",
+        "startup must identify the configured log level");
 
     valid &= require_text(
         source,
@@ -144,14 +168,16 @@ int main() {
         valid = false;
     }
 
-    const auto summary = source.find("if (pipeline && now >= next_metrics)");
+    const auto summary =
+        source.find("metrics_schedule.take_if_due(");
     const auto unbound_continue = source.find("if (!target) {", summary);
     const auto stopped_continue =
         source.find("if (!control.processing_enabled()) {", summary);
     if (summary == std::string::npos || unbound_continue == std::string::npos ||
         stopped_continue == std::string::npos || summary > unbound_continue ||
         summary > stopped_continue) {
-        std::cerr << "periodic metrics must run before stopped/unbound continues\n";
+        std::cerr
+            << "active periodic metrics must run before stopped/unbound continues\n";
         valid = false;
     }
     return valid ? 0 : 1;

@@ -28,6 +28,10 @@ add_executable(session_log_test session_log_test.cpp)
 target_link_libraries(session_log_test PRIVATE dk_core)
 add_test(NAME session_log_test COMMAND session_log_test)
 
+add_executable(metrics_policy_test metrics_policy_test.cpp)
+target_link_libraries(metrics_policy_test PRIVATE dk_core)
+add_test(NAME metrics_policy_test COMMAND metrics_policy_test)
+
 add_executable(ocr_logging_source_test ocr_logging_source_test.cpp)
 target_compile_definitions(ocr_logging_source_test PRIVATE
   DK_OCR_RECOGNIZER_SOURCE_PATH="${PROJECT_SOURCE_DIR}/src/ocr_recognizer.cpp")
@@ -57,6 +61,12 @@ add_executable(app_source_test app_source_test.cpp)
 target_compile_definitions(app_source_test PRIVATE
   DK_APP_SOURCE_PATH="${PROJECT_SOURCE_DIR}/src/app.cpp")
 add_test(NAME app_source_test COMMAND app_source_test)
+
+add_executable(log_policy_test log_policy_test.cpp)
+target_compile_definitions(log_policy_test PRIVATE
+  DK_APP_SOURCE_PATH="${PROJECT_SOURCE_DIR}/src/app.cpp"
+  DK_MAIN_WIN32_SOURCE_PATH="${PROJECT_SOURCE_DIR}/src/main_win32.cpp")
+add_test(NAME log_policy_test COMMAND log_policy_test)
 
 add_executable(config_source_test config_source_test.cpp)
 target_compile_definitions(config_source_test PRIVATE
