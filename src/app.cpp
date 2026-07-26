@@ -46,13 +46,14 @@ double milliseconds(Clock::duration elapsed) {
 
 App::App(const AppConfig& config, FrameSource& frames, CandidateDetector& detector,
          LineRecognizer& recognizer, InputSink& input,
-         CancellationPredicate cancellation)
+         CancellationPredicate cancellation, DelayFunction delay)
     : config_(config),
       frames_(frames),
       detector_(detector),
       recognizer_(recognizer),
       input_(input),
       cancellation_(std::move(cancellation)),
+      delay_(std::move(delay)),
       tracker_(config.tracker) {}
 
 bool App::process_one_frame() {
@@ -112,6 +113,9 @@ bool App::process_one_frame() {
         if (!config_.live_input) {
             std::clog << "[DRY] would type " << selected->normalized_text << '\n';
             tracker_.mark_sent(*selected);
+            delay_(
+                std::chrono::milliseconds{config_.post_send_delay_ms},
+                cancellation_);
         } else if (cancellation_ && cancellation_()) {
             std::clog << "Input cancelled before dispatch for "
                       << selected->normalized_text << '\n';
@@ -121,6 +125,9 @@ bool App::process_one_frame() {
                       << selected->normalized_text << '\n';
             if (status == SendStatus::sent) {
                 tracker_.mark_sent(*selected);
+                delay_(
+                    std::chrono::milliseconds{config_.post_send_delay_ms},
+                    cancellation_);
             } else if (status == SendStatus::cancelled) {
                 std::clog << "Input cancellation is nonfatal; processing state "
                              "will be consumed by the main loop.\n";

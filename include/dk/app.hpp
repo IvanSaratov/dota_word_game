@@ -4,6 +4,7 @@
 
 #include "dk/candidate_detector.hpp"
 #include "dk/config.hpp"
+#include "dk/delay.hpp"
 #include "dk/frame_source.hpp"
 #include "dk/input_sink.hpp"
 #include "dk/metrics.hpp"
@@ -16,7 +17,8 @@ class App {
 public:
     App(const AppConfig& config, FrameSource& frames, CandidateDetector& detector,
         LineRecognizer& recognizer, InputSink& input,
-        CancellationPredicate cancellation = {});
+        CancellationPredicate cancellation = {},
+        DelayFunction delay = interruptible_delay);
     bool process_one_frame();
     [[nodiscard]] const std::optional<TextCandidate>& last_result() const noexcept;
     [[nodiscard]] const LatencyMetrics& metrics() const noexcept;
@@ -28,6 +30,7 @@ private:
     LineRecognizer& recognizer_;
     InputSink& input_;
     CancellationPredicate cancellation_;
+    DelayFunction delay_;
     TargetTracker tracker_;
     LatencyMetrics metrics_;
     std::optional<TextCandidate> last_result_;
