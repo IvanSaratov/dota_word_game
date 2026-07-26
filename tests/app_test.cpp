@@ -3,6 +3,8 @@
 #include <cstddef>
 #include <deque>
 #include <functional>
+#include <sstream>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -20,6 +22,15 @@ bool complete_delay(
     std::chrono::milliseconds,
     const dk::CancellationPredicate&) {
     return true;
+}
+
+dk::Logger& quiet_logger() {
+    static std::ostringstream out;
+    static std::ostringstream err;
+    static dk::Logger logger{
+        dk::LogLevel::error, out, err, nullptr,
+        [] { return std::chrono::system_clock::time_point{}; }};
+    return logger;
 }
 
 class FakeFrameSource final : public dk::FrameSource {
@@ -124,7 +135,9 @@ TEST_CASE("live app sends one confirmed target only once while it remains visibl
         {"ROCK-'N'-ROLL", .96F},
     }};
     FakeInputSink input;
-    dk::App app(config, frames, detector, recognizer, input, {}, complete_delay);
+    dk::App app(
+        config, frames, detector, recognizer, input, quiet_logger(), {},
+        complete_delay);
 
     CHECK(app.process_one_frame());
     CHECK(app.process_one_frame());
@@ -150,7 +163,9 @@ TEST_CASE("dry run recognizes and locks without sending") {
         {"HYPERSTONE", .97F},
     }};
     FakeInputSink input;
-    dk::App app(config, frames, detector, recognizer, input, {}, complete_delay);
+    dk::App app(
+        config, frames, detector, recognizer, input, quiet_logger(), {},
+        complete_delay);
 
     CHECK(app.process_one_frame());
     CHECK(app.process_one_frame());
@@ -173,7 +188,9 @@ TEST_CASE("app rejects empty and low confidence recognition") {
         {"---", .99F}, {"VALID", .50F},
     }};
     FakeInputSink input;
-    dk::App app(config, frames, detector, recognizer, input, {}, complete_delay);
+    dk::App app(
+        config, frames, detector, recognizer, input, quiet_logger(), {},
+        complete_delay);
 
     CHECK(app.process_one_frame());
     CHECK(app.process_one_frame());
@@ -192,7 +209,9 @@ TEST_CASE("app filters by length after normalizing punctuation") {
         {"-C-", .99F}, {"I/O!", .99F},
     }};
     FakeInputSink input;
-    dk::App app(config, frames, detector, recognizer, input, {}, complete_delay);
+    dk::App app(
+        config, frames, detector, recognizer, input, quiet_logger(), {},
+        complete_delay);
 
     CHECK(app.process_one_frame());
     CHECK(app.process_one_frame());
@@ -211,7 +230,9 @@ TEST_CASE("app never dispatches mixed Cyrillic OCR") {
         {"BLADEМЕЧ", .99F},
     }};
     FakeInputSink input;
-    dk::App app(config, frames, detector, recognizer, input, {}, complete_delay);
+    dk::App app(
+        config, frames, detector, recognizer, input, quiet_logger(), {},
+        complete_delay);
 
     CHECK(app.process_one_frame());
     CHECK_FALSE(app.last_result());
@@ -234,7 +255,9 @@ TEST_CASE("blocked or partial input makes process_one_frame request a stop") {
                 delays.push_back(duration);
                 return true;
             };
-        dk::App app(config, frames, detector, recognizer, input, {}, delay);
+        dk::App app(
+            config, frames, detector, recognizer, input, quiet_logger(), {},
+            delay);
 
         CHECK(app.process_one_frame());
         CHECK_FALSE(app.process_one_frame());
@@ -256,7 +279,8 @@ TEST_CASE("cancelled input is a nonfatal stop boundary and is not locked") {
             delays.push_back(duration);
             return true;
         };
-    dk::App app(config, frames, detector, recognizer, input, {}, delay);
+    dk::App app(
+        config, frames, detector, recognizer, input, quiet_logger(), {}, delay);
 
     CHECK(app.process_one_frame());
     CHECK(app.process_one_frame());
@@ -279,7 +303,9 @@ TEST_CASE("rejected input does not invoke the post-send delay") {
                 delays.push_back(duration);
                 return true;
             };
-        dk::App app(config, frames, detector, recognizer, input, {}, delay);
+        dk::App app(
+            config, frames, detector, recognizer, input, quiet_logger(), {},
+            delay);
 
         CHECK(app.process_one_frame());
         CHECK(app.process_one_frame());
@@ -300,7 +326,8 @@ TEST_CASE("cancellation during OCR prevents the final input call") {
         return !processing_enabled.load();
     };
     dk::App app(
-        config, frames, detector, recognizer, input, cancellation, complete_delay);
+        config, frames, detector, recognizer, input, quiet_logger(),
+        cancellation, complete_delay);
 
     CHECK(app.process_one_frame());
     recognizer.after_recognize = [&processing_enabled] {
@@ -331,7 +358,9 @@ TEST_CASE("cancellation during dry-run OCR skips pacing and target lock") {
             delays.push_back(duration);
             return true;
         };
-    dk::App app(config, frames, detector, recognizer, input, cancellation, delay);
+    dk::App app(
+        config, frames, detector, recognizer, input, quiet_logger(),
+        cancellation, delay);
 
     CHECK(app.process_one_frame());
     recognizer.after_recognize = [&processing_enabled] {
@@ -374,7 +403,9 @@ TEST_CASE("accepted live and dry targets apply pacing before a fresh capture") {
                       (live_input ? delays.size() : 0));
                 return true;
             };
-        dk::App app(config, frames, detector, recognizer, input, {}, delay);
+        dk::App app(
+            config, frames, detector, recognizer, input, quiet_logger(), {},
+            delay);
 
         CHECK(app.process_one_frame());
         CHECK(app.process_one_frame());
@@ -408,7 +439,9 @@ TEST_CASE("app sends a stable multiline target as one normalized input") {
         {"PHANTOM", .98F}, {"ASSASSIN", .94F},
     }};
     FakeInputSink input;
-    dk::App app(config, frames, detector, recognizer, input, {}, complete_delay);
+    dk::App app(
+        config, frames, detector, recognizer, input, quiet_logger(), {},
+        complete_delay);
 
     CHECK(app.process_one_frame());
     CHECK(input.sent.empty());
@@ -447,7 +480,9 @@ TEST_CASE("app waits for two clean frames after multiline lines cross") {
         {"TOP", .99F}, {"BOTTOM", .99F},
     }};
     FakeInputSink input;
-    dk::App app(config, frames, detector, recognizer, input, {}, complete_delay);
+    dk::App app(
+        config, frames, detector, recognizer, input, quiet_logger(), {},
+        complete_delay);
 
     for (int frame = 0; frame < 4; ++frame) {
         CHECK(app.process_one_frame());
@@ -477,7 +512,9 @@ TEST_CASE("app never sends a merged OCR line born during unresolved overlap") {
         {"TOPBOTTOM", .99F},
     }};
     FakeInputSink input;
-    dk::App app(config, frames, detector, recognizer, input, {}, complete_delay);
+    dk::App app(
+        config, frames, detector, recognizer, input, quiet_logger(), {},
+        complete_delay);
 
     for (int frame = 0; frame < 5; ++frame) {
         CHECK(app.process_one_frame());
@@ -504,7 +541,9 @@ TEST_CASE("app rejects a merged OCR line that appears after an overlap gap") {
         {"TOPBOTTOM", .99F},
     }};
     FakeInputSink input;
-    dk::App app(config, frames, detector, recognizer, input, {}, complete_delay);
+    dk::App app(
+        config, frames, detector, recognizer, input, quiet_logger(), {},
+        complete_delay);
 
     for (int frame = 0; frame < 6; ++frame) {
         CHECK(app.process_one_frame());
@@ -531,7 +570,9 @@ TEST_CASE("app keeps sent compound ownership when split lines merge") {
         {"PHANTOMASSASSIN", .99F},
     }};
     FakeInputSink input;
-    dk::App app(config, frames, detector, recognizer, input, {}, complete_delay);
+    dk::App app(
+        config, frames, detector, recognizer, input, quiet_logger(), {},
+        complete_delay);
 
     for (int frame = 0; frame < 5; ++frame) {
         CHECK(app.process_one_frame());
@@ -564,7 +605,9 @@ TEST_CASE("sent compound alias releases when its OCR text changes") {
         {"FRESH", .99F},
     }};
     FakeInputSink input;
-    dk::App app(config, frames, detector, recognizer, input, {}, complete_delay);
+    dk::App app(
+        config, frames, detector, recognizer, input, quiet_logger(), {},
+        complete_delay);
 
     for (int frame = 0; frame < 7; ++frame) {
         CHECK(app.process_one_frame());
@@ -593,7 +636,9 @@ TEST_CASE("sent compound rejects a new non-exact merged OCR line") {
         {"PHANTOMASSASSI", .99F},
     }};
     FakeInputSink input;
-    dk::App app(config, frames, detector, recognizer, input, {}, complete_delay);
+    dk::App app(
+        config, frames, detector, recognizer, input, quiet_logger(), {},
+        complete_delay);
 
     for (int frame = 0; frame < 5; ++frame) {
         CHECK(app.process_one_frame());
@@ -626,7 +671,9 @@ TEST_CASE("independently sent targets never own a later merged OCR line") {
         {"ALPHABETA", .99F},
     }};
     FakeInputSink input;
-    dk::App app(config, frames, detector, recognizer, input, {}, complete_delay);
+    dk::App app(
+        config, frames, detector, recognizer, input, quiet_logger(), {},
+        complete_delay);
 
     for (int frame = 0; frame < 7; ++frame) {
         CHECK(app.process_one_frame());
@@ -658,7 +705,9 @@ TEST_CASE("post-send pacing receives live cancellation state") {
             CHECK(input.sent.size() == 1);
             return false;
         };
-    dk::App app(config, frames, detector, recognizer, input, cancellation, delay);
+    dk::App app(
+        config, frames, detector, recognizer, input, quiet_logger(),
+        cancellation, delay);
 
     CHECK(app.process_one_frame());
     CHECK(app.process_one_frame());
@@ -672,11 +721,112 @@ TEST_CASE("frame timeout is a clean no-op") {
     FakeDetector detector{{}};
     FakeRecognizer recognizer{{}};
     FakeInputSink input;
-    dk::App app(config, frames, detector, recognizer, input, {}, complete_delay);
+    dk::App app(
+        config, frames, detector, recognizer, input, quiet_logger(), {},
+        complete_delay);
 
     CHECK(app.process_one_frame());
     CHECK_FALSE(app.last_result());
     CHECK(app.metrics().summary().total.count == 0);
+}
+
+TEST_CASE("info logs accepted targets without per-frame diagnostics") {
+    auto config = dk::AppConfig::defaults();
+    config.live_input = false;
+    FakeFrameSource frames{2};
+    FakeDetector detector{{{30, 200, 180, 40}}};
+    FakeRecognizer recognizer{{{"TARGET", .99F}, {"TARGET", .99F}}};
+    FakeInputSink input;
+    std::ostringstream out;
+    std::ostringstream err;
+    dk::Logger logger{
+        dk::LogLevel::info, out, err, nullptr,
+        [] { return std::chrono::system_clock::time_point{}; }};
+    dk::App app(
+        config, frames, detector, recognizer, input, logger, {},
+        complete_delay);
+
+    CHECK(app.process_one_frame());
+    CHECK(app.process_one_frame());
+
+    CHECK(out.str().find("[INFO] [DRY] would type TARGET") !=
+          std::string::npos);
+    CHECK(out.str().find("OCR raw=") == std::string::npos);
+    CHECK(out.str().find("Timing capture=") == std::string::npos);
+    CHECK(err.str().empty());
+}
+
+TEST_CASE("debug logs raw OCR and per-frame timing") {
+    auto config = dk::AppConfig::defaults();
+    FakeFrameSource frames{1};
+    FakeDetector detector{{{30, 200, 180, 40}}};
+    FakeRecognizer recognizer{{{"TARGET", .99F}}};
+    FakeInputSink input;
+    std::ostringstream out;
+    std::ostringstream err;
+    dk::Logger logger{
+        dk::LogLevel::debug, out, err, nullptr,
+        [] { return std::chrono::system_clock::time_point{}; }};
+    dk::App app(
+        config, frames, detector, recognizer, input, logger, {},
+        complete_delay);
+
+    CHECK(app.process_one_frame());
+
+    CHECK(out.str().find("[DEBUG] OCR raw=\"TARGET\"") !=
+          std::string::npos);
+    CHECK(out.str().find("[DEBUG] Timing capture=") !=
+          std::string::npos);
+    CHECK(err.str().empty());
+}
+
+TEST_CASE("blocked and partial input are warning records") {
+    for (const auto status : {dk::SendStatus::blocked, dk::SendStatus::partial}) {
+        auto config = dk::AppConfig::defaults();
+        config.live_input = true;
+        FakeFrameSource frames{2};
+        FakeDetector detector{{{30, 200, 180, 40}}};
+        FakeRecognizer recognizer{{{"TARGET", .99F}, {"TARGET", .99F}}};
+        FakeInputSink input{status};
+        std::ostringstream out;
+        std::ostringstream err;
+        dk::Logger logger{
+            dk::LogLevel::info, out, err, nullptr,
+            [] { return std::chrono::system_clock::time_point{}; }};
+        dk::App app(
+            config, frames, detector, recognizer, input, logger, {},
+            complete_delay);
+
+        CHECK(app.process_one_frame());
+        CHECK_FALSE(app.process_one_frame());
+
+        CHECK(err.str().find("[WARNING] Input " +
+                             std::string{status == dk::SendStatus::blocked
+                                             ? "blocked"
+                                             : "partial"} +
+                             " for TARGET") != std::string::npos);
+    }
+}
+
+TEST_CASE("processing failures remain exceptions for the runtime boundary") {
+    auto config = dk::AppConfig::defaults();
+    FakeFrameSource frames{1};
+    FakeDetector detector{{{30, 200, 180, 40}}};
+    FakeRecognizer recognizer{{{"TARGET", .99F}}};
+    recognizer.after_recognize = [] {
+        throw std::runtime_error{"recognizer failure"};
+    };
+    FakeInputSink input;
+    std::ostringstream out;
+    std::ostringstream err;
+    dk::Logger logger{
+        dk::LogLevel::debug, out, err, nullptr,
+        [] { return std::chrono::system_clock::time_point{}; }};
+    dk::App app(
+        config, frames, detector, recognizer, input, logger, {},
+        complete_delay);
+
+    CHECK_THROWS_WITH(app.process_one_frame(), "recognizer failure");
 }
 
 TEST_CASE("latency metrics retain 512 recent samples and summarize milliseconds") {
