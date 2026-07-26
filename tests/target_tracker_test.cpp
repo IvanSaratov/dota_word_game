@@ -1,5 +1,7 @@
 #include <initializer_list>
+#include <span>
 #include <string>
+#include <string_view>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -22,6 +24,78 @@ static std::optional<TextCandidate> update_tracker(
     std::initializer_list<TextCandidate> candidates) {
     return tracker.update(
         std::span<const TextCandidate>{candidates.begin(), candidates.size()});
+}
+
+static dk::TrackerFrame update_lines(
+    dk::TargetTracker& tracker,
+    std::initializer_list<TextCandidate> candidates) {
+    return tracker.update_lines(
+        std::span<const TextCandidate>{candidates.begin(), candidates.size()});
+}
+
+static const dk::LineTrackSnapshot* find_line(
+    const dk::TrackerFrame& frame, std::string_view normalized_text) {
+    for (const auto& line : frame.lines) {
+        if (line.value.normalized_text == normalized_text) {
+            return &line;
+        }
+    }
+    return nullptr;
+}
+
+TEST_CASE("line snapshots preserve identity and expose missing state") {
+    dk::TargetTracker tracker;
+
+    const auto first = update_lines(tracker, {word("MOVING", 100)});
+    REQUIRE(first.lines.size() == 1);
+    const auto moving_id = first.lines.front().id;
+    CHECK_FALSE(first.lines.front().confirmed);
+    CHECK(first.lines.front().observed_this_frame);
+
+    const auto second = update_lines(tracker, {word("MOVING", 150)});
+    const auto* moving = find_line(second, "MOVING");
+    REQUIRE(moving != nullptr);
+    CHECK(moving->id == moving_id);
+    CHECK(moving->seen_frames == 2);
+    CHECK(moving->confirmed);
+    CHECK(moving->observed_this_frame);
+
+    const auto third = update_lines(tracker, {word("NEW", 500)});
+    moving = find_line(third, "MOVING");
+    const auto* added = find_line(third, "NEW");
+    REQUIRE(moving != nullptr);
+    REQUIRE(added != nullptr);
+    CHECK(moving->id == moving_id);
+    CHECK(moving->missing_frames == 1);
+    CHECK_FALSE(moving->observed_this_frame);
+    CHECK(added->id > moving_id);
+    CHECK(added->observed_this_frame);
+}
+
+TEST_CASE("marking a track ID sent does not mark its neighbor") {
+    dk::TargetTracker tracker;
+    update_lines(
+        tracker, {word("LEFT", 100, 100), word("RIGHT", 100, 500)});
+    const auto confirmed = update_lines(
+        tracker, {word("LEFT", 108, 100), word("RIGHT", 108, 500)});
+    const auto* left = find_line(confirmed, "LEFT");
+    const auto* right = find_line(confirmed, "RIGHT");
+    REQUIRE(left != nullptr);
+    REQUIRE(right != nullptr);
+    REQUIRE(left->confirmed);
+    REQUIRE(right->confirmed);
+
+    const dk::TrackId sent_ids[]{right->id};
+    tracker.mark_sent(sent_ids);
+
+    const auto after = update_lines(
+        tracker, {word("LEFT", 116, 100), word("RIGHT", 116, 500)});
+    left = find_line(after, "LEFT");
+    right = find_line(after, "RIGHT");
+    REQUIRE(left != nullptr);
+    REQUIRE(right != nullptr);
+    CHECK_FALSE(left->sent);
+    CHECK(right->sent);
 }
 
 TEST_CASE("tracker requires two adjacent frames") {
