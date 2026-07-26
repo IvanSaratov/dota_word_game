@@ -5,10 +5,14 @@
 #include <cstddef>
 #include <iomanip>
 #include <iostream>
+#include <limits>
+#include <optional>
+#include <string>
 #include <vector>
 
 #include <opencv2/core.hpp>
 
+#include "dk/target_scheduler.hpp"
 #include "dk/text_normalizer.hpp"
 
 namespace dk {
@@ -40,6 +44,38 @@ Box clip_to_frame(const Box& box, const cv::Mat& frame) noexcept {
 
 double milliseconds(Clock::duration elapsed) {
     return std::chrono::duration<double, std::milli>(elapsed).count();
+}
+
+std::optional<TextCandidate> revalidate(
+    const CompoundTarget& target,
+    std::span<const LineTrackSnapshot> lines) {
+    if (target.line_ids.empty()) {
+        return std::nullopt;
+    }
+
+    TextCandidate combined{
+        .confidence = std::numeric_limits<float>::max(),
+        .bounds = target.bounds,
+    };
+    for (const auto id : target.line_ids) {
+        const auto line =
+            std::ranges::find(lines, id, &LineTrackSnapshot::id);
+        if (line == lines.end() || !line->confirmed ||
+            !line->observed_this_frame || line->sent) {
+            return std::nullopt;
+        }
+        if (!combined.raw_text.empty()) {
+            combined.raw_text += '\n';
+        }
+        combined.raw_text += line->value.raw_text;
+        combined.normalized_text += line->value.normalized_text;
+        combined.confidence =
+            std::min(combined.confidence, line->value.confidence);
+    }
+    if (combined.normalized_text != target.normalized_text) {
+        return std::nullopt;
+    }
+    return combined;
 }
 
 }  // namespace
@@ -106,34 +142,42 @@ bool App::process_one_frame() {
     }
     const auto ocr_end = Clock::now();
 
-    const auto selected = tracker_.update(candidates);
+    const auto tracker_frame = tracker_.update_lines(candidates);
+    const auto targets = assembler_.update(tracker_frame.lines);
+    const auto selected = select_lowest_ready(targets);
     bool keep_running = true;
     if (selected) {
-        last_result_ = selected;
-        if (cancellation_ && cancellation_()) {
-            std::clog << "Input cancelled before dispatch for "
-                      << selected->normalized_text << '\n';
-        } else if (!config_.live_input) {
-            std::clog << "[DRY] would type " << selected->normalized_text << '\n';
-            tracker_.mark_sent(*selected);
-            delay_(
-                std::chrono::milliseconds{config_.post_send_delay_ms},
-                cancellation_);
-        } else {
-            const auto status = input_.send_letters(selected->normalized_text);
-            std::clog << "Input " << status_name(status) << " for "
-                      << selected->normalized_text << '\n';
-            if (status == SendStatus::sent) {
-                tracker_.mark_sent(*selected);
+        const auto combined = revalidate(*selected, tracker_frame.lines);
+        if (combined) {
+            last_result_ = combined;
+            if (cancellation_ && cancellation_()) {
+                std::clog << "Input cancelled before dispatch for "
+                          << combined->normalized_text << '\n';
+            } else if (!config_.live_input) {
+                std::clog << "[DRY] would type " << combined->normalized_text
+                          << '\n';
+                tracker_.mark_sent(selected->line_ids);
                 delay_(
                     std::chrono::milliseconds{config_.post_send_delay_ms},
                     cancellation_);
-            } else if (status == SendStatus::cancelled) {
-                std::clog << "Input cancellation is nonfatal; processing state "
-                             "will be consumed by the main loop.\n";
-            } else if (status == SendStatus::blocked ||
-                       status == SendStatus::partial) {
-                keep_running = false;
+            } else {
+                const auto status =
+                    input_.send_letters(combined->normalized_text);
+                std::clog << "Input " << status_name(status) << " for "
+                          << combined->normalized_text << '\n';
+                if (status == SendStatus::sent) {
+                    tracker_.mark_sent(selected->line_ids);
+                    delay_(
+                        std::chrono::milliseconds{config_.post_send_delay_ms},
+                        cancellation_);
+                } else if (status == SendStatus::cancelled) {
+                    std::clog
+                        << "Input cancellation is nonfatal; processing state "
+                           "will be consumed by the main loop.\n";
+                } else if (status == SendStatus::blocked ||
+                           status == SendStatus::partial) {
+                    keep_running = false;
+                }
             }
         }
     }

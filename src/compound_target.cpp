@@ -68,6 +68,24 @@ bool reading_order(
 
 std::vector<CompoundTarget> CompoundTargetAssembler::update(
     std::span<const LineTrackSnapshot> lines) {
+    std::erase_if(text_by_id_, [&](const auto& entry) {
+        return std::ranges::find(lines, entry.first, &LineTrackSnapshot::id) ==
+               lines.end();
+    });
+
+    std::vector<TrackId> text_changes;
+    for (const auto& line : lines) {
+        if (!line.observed_this_frame) {
+            continue;
+        }
+        const auto [text, inserted] =
+            text_by_id_.try_emplace(line.id, line.value.normalized_text);
+        if (!inserted && text->second != line.value.normalized_text) {
+            text->second = line.value.normalized_text;
+            text_changes.push_back(line.id);
+        }
+    }
+
     std::erase_if(pairs_, [&](const auto& entry) {
         const auto has_id = [&](TrackId id) {
             return std::ranges::find(lines, id, &LineTrackSnapshot::id) !=
@@ -117,6 +135,13 @@ std::vector<CompoundTarget> CompoundTargetAssembler::update(
             }
 
             auto& state = existing->second;
+            const auto text_changed =
+                std::ranges::find(text_changes, left.id) != text_changes.end() ||
+                std::ranges::find(text_changes, right.id) != text_changes.end();
+            if (text_changed) {
+                state.ambiguous = true;
+                state.clean_frames = 0;
+            }
             const auto tolerance = motion_tolerance(left, right);
             const auto stable =
                 std::abs(relative_x - state.relative_x) <= tolerance &&
@@ -128,7 +153,7 @@ std::vector<CompoundTarget> CompoundTargetAssembler::update(
                 if (!state.grouped && state.stable_frames >= 2) {
                     state.provisional = true;
                 }
-                if (state.ambiguous) {
+                if (state.ambiguous && !text_changed) {
                     ++state.clean_frames;
                     if (state.clean_frames >= 2) {
                         state.ambiguous = false;

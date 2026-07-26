@@ -3,6 +3,7 @@
 #include <optional>
 
 #include "dk/candidate_detector.hpp"
+#include "dk/compound_target.hpp"
 #include "dk/config.hpp"
 #include "dk/delay.hpp"
 #include "dk/frame_source.hpp"
@@ -34,6 +35,7 @@ private:
     CancellationPredicate cancellation_;
     DelayFunction delay_;
     TargetTracker tracker_;
+    CompoundTargetAssembler assembler_;
     LatencyMetrics metrics_;
     std::optional<TextCandidate> last_result_;
 };

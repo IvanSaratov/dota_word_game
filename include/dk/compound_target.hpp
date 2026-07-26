@@ -36,6 +36,7 @@ private:
     };
 
     std::map<std::pair<TrackId, TrackId>, PairState> pairs_;
+    std::map<TrackId, std::string> text_by_id_;
 };
 
 }  // namespace dk
