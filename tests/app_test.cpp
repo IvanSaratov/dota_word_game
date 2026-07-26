@@ -14,6 +14,14 @@
 
 namespace {
 
+using namespace std::chrono_literals;
+
+bool complete_delay(
+    std::chrono::milliseconds,
+    const dk::CancellationPredicate&) {
+    return true;
+}
+
 class FakeFrameSource final : public dk::FrameSource {
 public:
     explicit FakeFrameSource(int count) : remaining_(count) {}
@@ -22,11 +30,14 @@ public:
         if (remaining_-- <= 0) {
             return std::nullopt;
         }
+        ++returned_frames;
         return dk::CapturedFrame{
             cv::Mat(720, 1000, CV_8UC4, cv::Scalar{}),
             std::chrono::steady_clock::now(),
         };
     }
+
+    int returned_frames{};
 
 private:
     int remaining_;
@@ -97,7 +108,7 @@ TEST_CASE("live app sends one confirmed target only once while it remains visibl
         {"ROCK-'N'-ROLL", .96F},
     }};
     FakeInputSink input;
-    dk::App app(config, frames, detector, recognizer, input);
+    dk::App app(config, frames, detector, recognizer, input, {}, complete_delay);
 
     CHECK(app.process_one_frame());
     CHECK(app.process_one_frame());
@@ -123,7 +134,7 @@ TEST_CASE("dry run recognizes and locks without sending") {
         {"HYPERSTONE", .97F},
     }};
     FakeInputSink input;
-    dk::App app(config, frames, detector, recognizer, input);
+    dk::App app(config, frames, detector, recognizer, input, {}, complete_delay);
 
     CHECK(app.process_one_frame());
     CHECK(app.process_one_frame());
@@ -146,7 +157,7 @@ TEST_CASE("app rejects empty and low confidence recognition") {
         {"---", .99F}, {"VALID", .50F},
     }};
     FakeInputSink input;
-    dk::App app(config, frames, detector, recognizer, input);
+    dk::App app(config, frames, detector, recognizer, input, {}, complete_delay);
 
     CHECK(app.process_one_frame());
     CHECK(app.process_one_frame());
@@ -165,7 +176,7 @@ TEST_CASE("app filters by length after normalizing punctuation") {
         {"-C-", .99F}, {"I/O!", .99F},
     }};
     FakeInputSink input;
-    dk::App app(config, frames, detector, recognizer, input);
+    dk::App app(config, frames, detector, recognizer, input, {}, complete_delay);
 
     CHECK(app.process_one_frame());
     CHECK(app.process_one_frame());
@@ -184,7 +195,7 @@ TEST_CASE("app never dispatches mixed Cyrillic OCR") {
         {"BLADEМЕЧ", .99F},
     }};
     FakeInputSink input;
-    dk::App app(config, frames, detector, recognizer, input);
+    dk::App app(config, frames, detector, recognizer, input, {}, complete_delay);
 
     CHECK(app.process_one_frame());
     CHECK_FALSE(app.last_result());
@@ -201,11 +212,18 @@ TEST_CASE("blocked or partial input makes process_one_frame request a stop") {
         FakeDetector detector{{{30, 200, 180, 40}}};
         FakeRecognizer recognizer{{{"TARGET", .99F}, {"TARGET", .99F}}};
         FakeInputSink input{status};
-        dk::App app(config, frames, detector, recognizer, input);
+        std::vector<std::chrono::milliseconds> delays;
+        const dk::DelayFunction delay =
+            [&delays](auto duration, const auto&) {
+                delays.push_back(duration);
+                return true;
+            };
+        dk::App app(config, frames, detector, recognizer, input, {}, delay);
 
         CHECK(app.process_one_frame());
         CHECK_FALSE(app.process_one_frame());
         REQUIRE(input.sent.size() == 1);
+        CHECK(delays.empty());
     }
 }
 
@@ -216,11 +234,42 @@ TEST_CASE("cancelled input is a nonfatal stop boundary and is not locked") {
     FakeDetector detector{{{30, 200, 180, 40}}};
     FakeRecognizer recognizer{{{"TARGET", .99F}, {"TARGET", .99F}}};
     FakeInputSink input{dk::SendStatus::cancelled};
-    dk::App app(config, frames, detector, recognizer, input);
+    std::vector<std::chrono::milliseconds> delays;
+    const dk::DelayFunction delay =
+        [&delays](auto duration, const auto&) {
+            delays.push_back(duration);
+            return true;
+        };
+    dk::App app(config, frames, detector, recognizer, input, {}, delay);
 
     CHECK(app.process_one_frame());
     CHECK(app.process_one_frame());
     REQUIRE(input.sent.size() == 1);
+    CHECK(delays.empty());
+}
+
+TEST_CASE("rejected input does not invoke the post-send delay") {
+    for (const auto status :
+         {dk::SendStatus::not_foreground, dk::SendStatus::invalid_text}) {
+        auto config = dk::AppConfig::defaults();
+        config.live_input = true;
+        FakeFrameSource frames{2};
+        FakeDetector detector{{{30, 200, 180, 40}}};
+        FakeRecognizer recognizer{{{"TARGET", .99F}, {"TARGET", .99F}}};
+        FakeInputSink input{status};
+        std::vector<std::chrono::milliseconds> delays;
+        const dk::DelayFunction delay =
+            [&delays](auto duration, const auto&) {
+                delays.push_back(duration);
+                return true;
+            };
+        dk::App app(config, frames, detector, recognizer, input, {}, delay);
+
+        CHECK(app.process_one_frame());
+        CHECK(app.process_one_frame());
+        REQUIRE(input.sent.size() == 1);
+        CHECK(delays.empty());
+    }
 }
 
 TEST_CASE("cancellation during OCR prevents the final input call") {
@@ -234,7 +283,8 @@ TEST_CASE("cancellation during OCR prevents the final input call") {
     dk::CancellationPredicate cancellation = [&processing_enabled] {
         return !processing_enabled.load();
     };
-    dk::App app(config, frames, detector, recognizer, input, cancellation);
+    dk::App app(
+        config, frames, detector, recognizer, input, cancellation, complete_delay);
 
     CHECK(app.process_one_frame());
     recognizer.after_recognize = [&processing_enabled] {
@@ -244,13 +294,79 @@ TEST_CASE("cancellation during OCR prevents the final input call") {
     CHECK(input.sent.empty());
 }
 
+TEST_CASE("accepted live and dry targets apply pacing before a fresh capture") {
+    for (const bool live_input : {false, true}) {
+        CAPTURE(live_input);
+        auto config = dk::AppConfig::defaults();
+        config.live_input = live_input;
+        config.post_send_delay_ms = 275;
+        FakeFrameSource frames{3};
+        FakeDetector detector{{{30, 200, 180, 40}}};
+        FakeRecognizer recognizer{{
+            {"TARGET", .99F},
+            {"TARGET", .99F},
+            {"TARGET", .99F},
+        }};
+        FakeInputSink input;
+        std::vector<std::chrono::milliseconds> delays;
+        const dk::DelayFunction delay =
+            [&](auto duration, const auto&) {
+                delays.push_back(duration);
+                CHECK(frames.returned_frames == 2);
+                CHECK(input.sent.size() == (live_input ? 1 : 0));
+                return true;
+            };
+        dk::App app(config, frames, detector, recognizer, input, {}, delay);
+
+        CHECK(app.process_one_frame());
+        CHECK(app.process_one_frame());
+        CHECK(delays == std::vector{275ms});
+        CHECK(frames.returned_frames == 2);
+
+        CHECK(app.process_one_frame());
+        CHECK(frames.returned_frames == 3);
+        CHECK(delays == std::vector{275ms});
+        CHECK(input.sent.size() == (live_input ? 1 : 0));
+    }
+}
+
+TEST_CASE("post-send pacing receives live cancellation state") {
+    auto config = dk::AppConfig::defaults();
+    config.live_input = true;
+    FakeFrameSource frames{2};
+    FakeDetector detector{{{30, 200, 180, 40}}};
+    FakeRecognizer recognizer{{{"TARGET", .99F}, {"TARGET", .99F}}};
+    FakeInputSink input;
+    std::atomic_bool processing_enabled{true};
+    const dk::CancellationPredicate cancellation = [&processing_enabled] {
+        return !processing_enabled.load();
+    };
+    std::vector<std::chrono::milliseconds> delays;
+    const dk::DelayFunction delay =
+        [&](auto duration, const auto& delay_cancellation) {
+            delays.push_back(duration);
+            CHECK_FALSE(delay_cancellation());
+            processing_enabled = false;
+            CHECK(delay_cancellation());
+            CHECK(frames.returned_frames == 2);
+            CHECK(input.sent.size() == 1);
+            return false;
+        };
+    dk::App app(config, frames, detector, recognizer, input, cancellation, delay);
+
+    CHECK(app.process_one_frame());
+    CHECK(app.process_one_frame());
+    CHECK(delays == std::vector{100ms});
+    CHECK(input.sent.size() == 1);
+}
+
 TEST_CASE("frame timeout is a clean no-op") {
     auto config = dk::AppConfig::defaults();
     FakeFrameSource frames{0};
     FakeDetector detector{{}};
     FakeRecognizer recognizer{{}};
     FakeInputSink input;
-    dk::App app(config, frames, detector, recognizer, input);
+    dk::App app(config, frames, detector, recognizer, input, {}, complete_delay);
 
     CHECK(app.process_one_frame());
     CHECK_FALSE(app.last_result());
@@ -259,7 +375,6 @@ TEST_CASE("frame timeout is a clean no-op") {
 
 TEST_CASE("latency metrics retain 512 recent samples and summarize milliseconds") {
     dk::LatencyMetrics metrics;
-    using namespace std::chrono_literals;
     for (int sample = 1; sample <= 513; ++sample) {
         metrics.record(dk::LatencyStage::capture, sample * 1ms);
     }
