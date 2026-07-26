@@ -1,5 +1,6 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
 
 #include <filesystem>
 #include <limits>
@@ -51,6 +52,25 @@ TEST_CASE("window title round-trips through UTF-8 JSON") {
     const auto restored = dk::parse_config(json);
 
     CHECK(restored.window_title == config.window_title);
+}
+
+TEST_CASE("post-send delay has a validated JSON contract") {
+    CHECK(dk::AppConfig::defaults().post_send_delay_ms == 100);
+
+    const auto parsed = dk::parse_config(R"({"post_send_delay_ms":250})");
+    CHECK(parsed.post_send_delay_ms == 250);
+    CHECK(dk::parse_config(R"({})").post_send_delay_ms == 100);
+    CHECK(dk::parse_config(dk::serialize_config(parsed)).post_send_delay_ms == 250);
+
+    CHECK_THROWS_WITH(
+        dk::parse_config(R"({"post_send_delay_ms":-1})"),
+        Catch::Matchers::ContainsSubstring("post_send_delay_ms"));
+    CHECK_THROWS_WITH(
+        dk::parse_config(R"({"post_send_delay_ms":5001})"),
+        Catch::Matchers::ContainsSubstring("post_send_delay_ms"));
+    CHECK_THROWS_WITH(
+        dk::parse_config(R"({"post_send_delay_ms":"100"})"),
+        Catch::Matchers::ContainsSubstring("post_send_delay_ms"));
 }
 
 TEST_CASE("configuration validation rejects unsafe values") {
