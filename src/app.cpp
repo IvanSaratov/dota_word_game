@@ -110,15 +110,15 @@ bool App::process_one_frame() {
     bool keep_running = true;
     if (selected) {
         last_result_ = selected;
-        if (!config_.live_input) {
+        if (cancellation_ && cancellation_()) {
+            std::clog << "Input cancelled before dispatch for "
+                      << selected->normalized_text << '\n';
+        } else if (!config_.live_input) {
             std::clog << "[DRY] would type " << selected->normalized_text << '\n';
             tracker_.mark_sent(*selected);
             delay_(
                 std::chrono::milliseconds{config_.post_send_delay_ms},
                 cancellation_);
-        } else if (cancellation_ && cancellation_()) {
-            std::clog << "Input cancelled before dispatch for "
-                      << selected->normalized_text << '\n';
         } else {
             const auto status = input_.send_letters(selected->normalized_text);
             std::clog << "Input " << status_name(status) << " for "
