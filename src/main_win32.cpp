@@ -248,6 +248,7 @@ int wmain(int argc, wchar_t* argv[]) {
     try {
         const auto log_path =
             executable_directory() / L"dota-keyboard.log";
+        const auto log_path_text = dk::path_to_utf8(log_path);
         dk::SessionLog session_log{log_path};
         std::unique_ptr<dk::Logger> logger;
         try {
@@ -266,11 +267,11 @@ int wmain(int argc, wchar_t* argv[]) {
                     " started; log_level=" +
                     std::string{
                         dk::configured_log_level_name(config.log_level)} +
-                    "; log_path=" + log_path.string());
+                    "; log_path=" + log_path_text);
             if (!session_log.is_open()) {
                 runtime_logger.write(
                     dk::LogLevel::warning,
-                    "Unable to open session log at " + log_path.string() +
+                    "Unable to open session log at " + log_path_text +
                         "; continuing with console logging.");
             }
             runtime_logger.write(

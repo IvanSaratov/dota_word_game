@@ -27,6 +27,16 @@ std::string read_all(const std::filesystem::path& path) {
 }  // namespace
 
 int main() {
+    const std::u8string unicode_path_text =
+        u8"C:\\Users\\Tést\\Dota Keyboard\\dota-keyboard.log";
+    const std::string expected_utf8{
+        reinterpret_cast<const char*>(unicode_path_text.data()),
+        unicode_path_text.size()};
+    require(
+        dk::path_to_utf8(std::filesystem::path{unicode_path_text}) ==
+            expected_utf8,
+        "path text must preserve non-ASCII characters as UTF-8");
+
     const auto unique =
         std::chrono::steady_clock::now().time_since_epoch().count();
     const auto root = std::filesystem::temp_directory_path() /

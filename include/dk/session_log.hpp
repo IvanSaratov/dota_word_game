@@ -3,8 +3,11 @@
 #include <filesystem>
 #include <fstream>
 #include <ostream>
+#include <string>
 
 namespace dk {
+
+[[nodiscard]] std::string path_to_utf8(const std::filesystem::path& path);
 
 class SessionLog {
 public:
