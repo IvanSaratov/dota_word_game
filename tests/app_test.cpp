@@ -826,7 +826,12 @@ TEST_CASE("processing failures remain exceptions for the runtime boundary") {
         config, frames, detector, recognizer, input, logger, {},
         complete_delay);
 
-    CHECK_THROWS_WITH(app.process_one_frame(), "recognizer failure");
+    try {
+        static_cast<void>(app.process_one_frame());
+        FAIL("processing failure must escape App");
+    } catch (const std::runtime_error& error) {
+        CHECK(std::string{error.what()} == "recognizer failure");
+    }
 }
 
 TEST_CASE("latency metrics retain 512 recent samples and summarize milliseconds") {
