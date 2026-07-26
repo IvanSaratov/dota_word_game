@@ -4,9 +4,9 @@
 #include <chrono>
 #include <cstddef>
 #include <iomanip>
-#include <iostream>
 #include <limits>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -124,12 +124,14 @@ bool App::process_one_frame() {
         });
         const auto recognized = recognizer_.recognize(crop);
         auto normalized = normalize_for_input(recognized.text);
-        std::clog << "OCR raw=\"" << recognized.text << "\" normalized=\""
-                  << normalized << "\" confidence=" << std::fixed
-                  << std::setprecision(3) << recognized.confidence << " box=("
-                  << selected_region_box.x << ',' << selected_region_box.y << ','
-                  << selected_region_box.width << ',' << selected_region_box.height
-                  << ")\n";
+        std::ostringstream message;
+        message << "OCR raw=\"" << recognized.text << "\" normalized=\""
+                << normalized << "\" confidence=" << std::fixed
+                << std::setprecision(3) << recognized.confidence << " box=("
+                << selected_region_box.x << ',' << selected_region_box.y << ','
+                << selected_region_box.width << ',' << selected_region_box.height
+                << ')';
+        logger_.write(LogLevel::debug, message.str());
         if (normalized.size() < kMinimumNormalizedLength ||
             recognized.confidence < config_.min_ocr_confidence) {
             continue;
@@ -152,11 +154,14 @@ bool App::process_one_frame() {
         if (combined) {
             last_result_ = combined;
             if (cancellation_ && cancellation_()) {
-                std::clog << "Input cancelled before dispatch for "
-                          << combined->normalized_text << '\n';
+                logger_.write(
+                    LogLevel::warning,
+                    "Input cancelled before dispatch for " +
+                        combined->normalized_text);
             } else if (!config_.live_input) {
-                std::clog << "[DRY] would type " << combined->normalized_text
-                          << '\n';
+                logger_.write(
+                    LogLevel::info,
+                    "[DRY] would type " + combined->normalized_text);
                 assembler_.mark_sent(*selected);
                 tracker_.mark_sent(selected->line_ids);
                 delay_(
@@ -165,8 +170,13 @@ bool App::process_one_frame() {
             } else {
                 const auto status =
                     input_.send_letters(combined->normalized_text);
-                std::clog << "Input " << status_name(status) << " for "
-                          << combined->normalized_text << '\n';
+                const std::string status_message =
+                    "Input " + std::string{status_name(status)} + " for " +
+                    combined->normalized_text;
+                logger_.write(
+                    status == SendStatus::sent ? LogLevel::info
+                                               : LogLevel::warning,
+                    status_message);
                 if (status == SendStatus::sent) {
                     assembler_.mark_sent(*selected);
                     tracker_.mark_sent(selected->line_ids);
@@ -174,9 +184,8 @@ bool App::process_one_frame() {
                         std::chrono::milliseconds{config_.post_send_delay_ms},
                         cancellation_);
                 } else if (status == SendStatus::cancelled) {
-                    std::clog
-                        << "Input cancellation is nonfatal; processing state "
-                           "will be consumed by the main loop.\n";
+                    // The warning record is sufficient; the main loop consumes
+                    // the cancellation state without treating it as fatal.
                 } else if (status == SendStatus::blocked ||
                            status == SendStatus::partial) {
                     keep_running = false;
@@ -190,10 +199,12 @@ bool App::process_one_frame() {
     metrics_.record(LatencyStage::detect, detect_end - detect_start);
     metrics_.record(LatencyStage::ocr, ocr_end - ocr_start);
     metrics_.record(LatencyStage::total, total_end - total_start);
-    std::clog << "Timing capture=" << milliseconds(capture_end - capture_start)
-              << "ms detect=" << milliseconds(detect_end - detect_start)
-              << "ms ocr=" << milliseconds(ocr_end - ocr_start)
-              << "ms total=" << milliseconds(total_end - total_start) << "ms\n";
+    std::ostringstream timing;
+    timing << "Timing capture=" << milliseconds(capture_end - capture_start)
+           << "ms detect=" << milliseconds(detect_end - detect_start)
+           << "ms ocr=" << milliseconds(ocr_end - ocr_start)
+           << "ms total=" << milliseconds(total_end - total_start) << "ms";
+    logger_.write(LogLevel::debug, timing.str());
     return keep_running;
 }
 
