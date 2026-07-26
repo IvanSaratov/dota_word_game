@@ -78,7 +78,11 @@ MetricsSchedule::MetricsSchedule(
     const std::chrono::steady_clock::time_point now,
     const std::chrono::seconds period)
     : period_(period),
-      next_(now + period_) {}
+      next_(now + period_) {
+    if (period_ <= std::chrono::seconds::zero()) {
+        throw std::invalid_argument("metrics period must be positive");
+    }
+}
 
 bool MetricsSchedule::take_if_due(
     const std::chrono::steady_clock::time_point now,

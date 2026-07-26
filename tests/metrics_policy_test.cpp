@@ -3,6 +3,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <iostream>
+#include <stdexcept>
 #include <string>
 
 namespace {
@@ -55,4 +56,15 @@ int main() {
             "reset must start a fresh 60-second period");
     require(schedule.take_if_due(start + 260s, true),
             "reset schedule must emit after its fresh period");
+
+    for (const auto invalid_period : {0s, -1s}) {
+        bool rejected = false;
+        try {
+            const dk::MetricsSchedule invalid_schedule{
+                start, invalid_period};
+        } catch (const std::invalid_argument&) {
+            rejected = true;
+        }
+        require(rejected, "nonpositive metrics period must be rejected");
+    }
 }
