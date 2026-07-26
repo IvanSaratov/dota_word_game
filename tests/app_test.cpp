@@ -55,6 +55,22 @@ private:
     std::vector<dk::Box> boxes_;
 };
 
+class SequencedDetector final : public dk::CandidateDetector {
+public:
+    explicit SequencedDetector(std::deque<std::vector<dk::Box>> frames)
+        : frames_(std::move(frames)) {}
+
+    std::vector<dk::Box> detect(const cv::Mat&) const override {
+        REQUIRE_FALSE(frames_.empty());
+        auto boxes = frames_.front();
+        frames_.pop_front();
+        return boxes;
+    }
+
+private:
+    mutable std::deque<std::vector<dk::Box>> frames_;
+};
+
 class FakeRecognizer final : public dk::LineRecognizer {
 public:
     explicit FakeRecognizer(std::deque<dk::OcrResult> results)
@@ -339,8 +355,8 @@ TEST_CASE("accepted live and dry targets apply pacing before a fresh capture") {
         config.post_send_delay_ms = 275;
         FakeFrameSource frames{3};
         FakeDetector detector{{
-            {30, 300, 180, 40},
-            {30, 200, 180, 40},
+            {30, 500, 180, 40},
+            {700, 50, 180, 40},
         }};
         FakeRecognizer recognizer{{
             {"LOWER", .99F}, {"UPPER", .99F},
@@ -375,6 +391,71 @@ TEST_CASE("accepted live and dry targets apply pacing before a fresh capture") {
             CHECK(input.sent.empty());
         }
     }
+}
+
+TEST_CASE("app sends a stable multiline target as one normalized input") {
+    auto config = dk::AppConfig::defaults();
+    config.live_input = true;
+    FakeFrameSource frames{4};
+    FakeDetector detector{{
+        {100, 100, 220, 40},
+        {100, 155, 220, 40},
+    }};
+    FakeRecognizer recognizer{{
+        {"PHANTOM", .98F}, {"ASSASSIN", .94F},
+        {"PHANTOM", .98F}, {"ASSASSIN", .94F},
+        {"PHANTOM", .98F}, {"ASSASSIN", .94F},
+        {"PHANTOM", .98F}, {"ASSASSIN", .94F},
+    }};
+    FakeInputSink input;
+    dk::App app(config, frames, detector, recognizer, input, {}, complete_delay);
+
+    CHECK(app.process_one_frame());
+    CHECK(input.sent.empty());
+    CHECK(app.process_one_frame());
+    CHECK(input.sent.empty());
+    CHECK(app.process_one_frame());
+
+    REQUIRE(input.sent == std::vector<std::string>{"PHANTOMASSASSIN"});
+    REQUIRE(app.last_result());
+    CHECK(app.last_result()->raw_text == "PHANTOM\nASSASSIN");
+    CHECK(app.last_result()->normalized_text == "PHANTOMASSASSIN");
+    CHECK(app.last_result()->confidence == Catch::Approx(.94F));
+    CHECK((app.last_result()->bounds == dk::Box{100, 100, 220, 95}));
+
+    CHECK(app.process_one_frame());
+    CHECK(input.sent == std::vector<std::string>{"PHANTOMASSASSIN"});
+    CHECK_FALSE(app.last_result());
+}
+
+TEST_CASE("app waits for two clean frames after multiline lines cross") {
+    auto config = dk::AppConfig::defaults();
+    config.live_input = true;
+    FakeFrameSource frames{5};
+    SequencedDetector detector{{
+        {{100, 100, 220, 40}, {100, 155, 220, 40}},
+        {{100, 110, 220, 40}, {100, 165, 220, 40}},
+        {{100, 180, 220, 40}, {100, 125, 220, 40}},
+        {{100, 190, 220, 40}, {100, 135, 220, 40}},
+        {{100, 200, 220, 40}, {100, 145, 220, 40}},
+    }};
+    FakeRecognizer recognizer{{
+        {"TOP", .99F}, {"BOTTOM", .99F},
+        {"TOP", .99F}, {"BOTTOM", .99F},
+        {"TOP", .99F}, {"BOTTOM", .99F},
+        {"TOP", .99F}, {"BOTTOM", .99F},
+        {"TOP", .99F}, {"BOTTOM", .99F},
+    }};
+    FakeInputSink input;
+    dk::App app(config, frames, detector, recognizer, input, {}, complete_delay);
+
+    for (int frame = 0; frame < 4; ++frame) {
+        CHECK(app.process_one_frame());
+        CHECK(input.sent.empty());
+    }
+    CHECK(app.process_one_frame());
+
+    REQUIRE(input.sent == std::vector<std::string>{"BOTTOMTOP"});
 }
 
 TEST_CASE("post-send pacing receives live cancellation state") {
