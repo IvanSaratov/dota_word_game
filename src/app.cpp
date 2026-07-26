@@ -113,6 +113,13 @@ bool App::process_one_frame() {
     for (const auto& box : boxes) {
         const Box selected_region_box = clip_to_frame(box, frame->bgra);
         if (selected_region_box.width == 0 || selected_region_box.height == 0) {
+            std::ostringstream rejection;
+            rejection
+                << "OCR candidate rejected: clipped box is empty; "
+                   "detected_box=("
+                << box.x << ',' << box.y << ',' << box.width << ','
+                << box.height << ')';
+            logger_.write(LogLevel::debug, rejection.str());
             continue;
         }
 
@@ -132,8 +139,25 @@ bool App::process_one_frame() {
                 << selected_region_box.width << ',' << selected_region_box.height
                 << ')';
         logger_.write(LogLevel::debug, message.str());
-        if (normalized.size() < kMinimumNormalizedLength ||
-            recognized.confidence < config_.min_ocr_confidence) {
+        bool rejected = false;
+        if (normalized.size() < kMinimumNormalizedLength) {
+            std::ostringstream rejection;
+            rejection << "OCR candidate rejected: normalized_length="
+                      << normalized.size() << " minimum="
+                      << kMinimumNormalizedLength;
+            logger_.write(LogLevel::debug, rejection.str());
+            rejected = true;
+        }
+        if (recognized.confidence < config_.min_ocr_confidence) {
+            std::ostringstream rejection;
+            rejection << std::fixed << std::setprecision(3)
+                      << "OCR candidate rejected: confidence="
+                      << recognized.confidence << " minimum="
+                      << config_.min_ocr_confidence;
+            logger_.write(LogLevel::debug, rejection.str());
+            rejected = true;
+        }
+        if (rejected) {
             continue;
         }
         candidates.push_back({
