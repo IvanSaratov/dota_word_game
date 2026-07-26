@@ -156,6 +156,7 @@ bool App::process_one_frame() {
             } else if (!config_.live_input) {
                 std::clog << "[DRY] would type " << combined->normalized_text
                           << '\n';
+                assembler_.mark_sent(*selected);
                 tracker_.mark_sent(selected->line_ids);
                 delay_(
                     std::chrono::milliseconds{config_.post_send_delay_ms},
@@ -166,6 +167,7 @@ bool App::process_one_frame() {
                 std::clog << "Input " << status_name(status) << " for "
                           << combined->normalized_text << '\n';
                 if (status == SendStatus::sent) {
+                    assembler_.mark_sent(*selected);
                     tracker_.mark_sent(selected->line_ids);
                     delay_(
                         std::chrono::milliseconds{config_.post_send_delay_ms},

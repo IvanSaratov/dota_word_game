@@ -24,6 +24,7 @@ class CompoundTargetAssembler {
 public:
     std::vector<CompoundTarget> update(
         std::span<const LineTrackSnapshot> lines);
+    void mark_sent(const CompoundTarget& target);
 
 private:
     struct PairState {
@@ -31,15 +32,24 @@ private:
         float relative_y{};
         int stable_frames{};
         int clean_frames{};
+        int missing_frames{};
+        int disconnected_frames{};
         bool ambiguous{};
         bool grouped{};
         bool provisional{};
     };
 
+    struct SentCompound {
+        std::set<TrackId> line_ids;
+        std::string normalized_text;
+        Box bounds;
+    };
+
     std::map<std::pair<TrackId, TrackId>, PairState> pairs_;
     std::map<TrackId, std::string> text_by_id_;
-    std::set<TrackId> quarantined_ids_;
-    std::set<TrackId> sent_owned_ids_;
+    std::map<std::pair<TrackId, TrackId>, std::set<TrackId>>
+        quarantined_by_pair_;
+    std::vector<SentCompound> sent_compounds_;
 };
 
 }  // namespace dk
