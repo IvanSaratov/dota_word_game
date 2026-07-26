@@ -325,3 +325,87 @@ jobs:
           name: dota-keyboard-windows-x64-installer
           if-no-files-found: error
           path: build/windows-release/DotaKeyboardSetup-*-windows-x64.exe
+
+  static-link-feasibility:
+    runs-on: windows-2022
+    env:
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}\.vcpkg-binary-cache
+      VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}\.vcpkg-binary-cache,readwrite
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore static vcpkg binary cache
+        id: static-vcpkg-cache
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ github.workspace }}\.vcpkg-binary-cache
+          key: windows-2022-vcpkg-static-v1-${{ hashFiles('vcpkg.json', 'CMakePresets.json', 'cmake/triplets/**') }}
+          restore-keys: |
+            windows-2022-vcpkg-static-v1-
+
+      - name: Configure vcpkg environment
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not $env:VCPKG_INSTALLATION_ROOT) {
+            throw 'The runner did not provide VCPKG_INSTALLATION_ROOT.'
+          }
+          "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" >> $env:GITHUB_ENV
+          New-Item -ItemType Directory -Force -Path $env:VCPKG_DEFAULT_BINARY_CACHE | Out-Null
+          $baseline = (Get-Content vcpkg.json -Raw | ConvertFrom-Json).'builtin-baseline'
+          git -C $env:VCPKG_INSTALLATION_ROOT fetch --no-tags origin $baseline
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git -C $env:VCPKG_INSTALLATION_ROOT checkout --detach $baseline
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git -C $env:VCPKG_INSTALLATION_ROOT cat-file -e "$($baseline):versions/baseline.json"
+          if ($LASTEXITCODE -ne 0) {
+            throw "The vcpkg baseline $baseline does not contain versions/baseline.json."
+          }
+          & (Join-Path $env:VCPKG_INSTALLATION_ROOT 'bootstrap-vcpkg.bat') -disableMetrics
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Fetch pinned OCR assets
+        run: pwsh -NoProfile -File scripts/fetch-models.ps1
+
+      - name: Configure static project and install dependencies
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          cmake --preset windows-static-release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Save static vcpkg binary cache
+        if: ${{ success() && steps.static-vcpkg-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ github.workspace }}\.vcpkg-binary-cache
+          key: windows-2022-vcpkg-static-v1-${{ hashFiles('vcpkg.json', 'CMakePresets.json', 'cmake/triplets/**') }}
+
+      - name: Build, test, and verify static executable
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          cmake --build --preset windows-static-release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ctest --preset windows-static-release --output-on-failure
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $installRoot = Join-Path $env:GITHUB_WORKSPACE 'build/windows-static-release/install-check'
+          cmake --install build/windows-static-release --config Release --prefix $installRoot
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Push-Location $installRoot
+          try {
+            $checkOutput = @(& .\dota_keyboard.exe --check-install 2>&1)
+            $checkExitCode = $LASTEXITCODE
+            $checkOutput | ForEach-Object { Write-Host $_ }
+            if ($checkExitCode -ne 0) {
+              throw "dota_keyboard.exe --check-install exited with $checkExitCode."
+            }
+          } finally {
+            Pop-Location
+          }
+          if (-not (Test-Path -LiteralPath (Join-Path $installRoot 'dota-keyboard.log') -PathType Leaf)) {
+            throw 'Static install check did not create dota-keyboard.log next to the executable.'
+          }
+          & scripts/verify_single_exe.ps1 -Executable (Join-Path $installRoot 'dota_keyboard.exe')
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

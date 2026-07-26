@@ -177,5 +177,37 @@ int main() {
         release_source, "SmartScreen", "Microsoft SmartScreen release warning");
     valid &= require_text(
         release_source, ".sha256", "published installer checksum guidance");
+    const auto static_gate = windows_source.find("static-link-feasibility:");
+    if (static_gate == std::string::npos) {
+        std::cerr << "windows.yml must define the static-link feasibility gate\n";
+        valid = false;
+    } else {
+        const auto static_gate_source = windows_source.substr(static_gate);
+        valid &= require_text(
+            static_gate_source,
+            "cmake --preset windows-static-release",
+            "static gate configuration");
+        valid &= require_text(
+            static_gate_source,
+            "cmake --build --preset windows-static-release",
+            "static gate build");
+        valid &= require_text(
+            static_gate_source,
+            "ctest --preset windows-static-release",
+            "static gate tests");
+        valid &= require_text(
+            static_gate_source,
+            "dota_keyboard.exe --check-install",
+            "static gate install check");
+        valid &= require_text(
+            static_gate_source,
+            "scripts/verify_single_exe.ps1",
+            "static gate dependency verification");
+        if (static_gate_source.find("actions/upload-artifact") != std::string::npos ||
+            static_gate_source.find("cpack --preset") != std::string::npos) {
+            std::cerr << "static-link feasibility gate must not publish an artifact or package\n";
+            valid = false;
+        }
+    }
     return valid ? 0 : 1;
 }

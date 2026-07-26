@@ -1,4 +1,5 @@
 #include <fstream>
+#include <filesystem>
 #include <iostream>
 #include <iterator>
 #include <string>
@@ -163,6 +164,26 @@ int main() {
         return 1;
     }
 
+    const auto static_debug_preset = presets_source.find(
+        R"("name": "windows-static-debug")");
+    const auto static_release_preset = presets_source.find(
+        R"("name": "windows-static-release")");
+    if (static_debug_preset == std::string::npos ||
+        static_release_preset == std::string::npos ||
+        presets_source.find(
+            R"("VCPKG_TARGET_TRIPLET": "x64-windows-dota-static")") ==
+            std::string::npos ||
+        presets_source.find(
+            R"("CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreaded$<$<CONFIG:Debug>:Debug>")") ==
+            std::string::npos ||
+        presets_source.find(R"("binaryDir": "${sourceDir}/build/windows-static-debug")") ==
+            std::string::npos ||
+        presets_source.find(R"("binaryDir": "${sourceDir}/build/windows-static-release")") ==
+            std::string::npos) {
+        std::cerr << "static Windows presets must select the static triplet and CRT\n";
+        return 1;
+    }
+
     std::ifstream triplet_input{DK_VCPKG_TRIPLET_PATH};
     const std::string triplet_source{
         std::istreambuf_iterator<char>{triplet_input},
@@ -201,6 +222,54 @@ int main() {
             std::string::npos) {
         std::cerr
             << "the overlay triplet must disable static registration only for the onnx port\n";
+        return 1;
+    }
+
+    const auto static_triplet_path =
+        std::filesystem::path{DK_VCPKG_TRIPLET_PATH}.parent_path() /
+        "x64-windows-dota-static.cmake";
+    std::ifstream static_triplet_input{static_triplet_path};
+    const std::string static_triplet_source{
+        std::istreambuf_iterator<char>{static_triplet_input},
+        std::istreambuf_iterator<char>{}};
+    if (!static_triplet_input || static_triplet_input.bad() ||
+        static_triplet_source.find("set(VCPKG_TARGET_ARCHITECTURE x64)") ==
+            std::string::npos ||
+        static_triplet_source.find("set(VCPKG_CRT_LINKAGE static)") ==
+            std::string::npos ||
+        static_triplet_source.find("set(VCPKG_LIBRARY_LINKAGE static)") ==
+            std::string::npos ||
+        static_triplet_source.find("set(VCPKG_PROVIDED_FORTRAN ON)") ==
+            std::string::npos ||
+        static_triplet_source.find(R"(if("${PORT}" STREQUAL "onnx"))") ==
+            std::string::npos ||
+        static_triplet_source.find(
+            "list(APPEND VCPKG_CMAKE_CONFIGURE_OPTIONS "
+            "-DONNX_DISABLE_STATIC_REGISTRATION=ON)") == std::string::npos) {
+        std::cerr << "static overlay triplet must keep the required static ONNX settings\n";
+        return 1;
+    }
+
+    const auto verifier_path =
+        std::filesystem::path{DK_CMAKE_PRESETS_PATH}.parent_path() /
+        "scripts/verify_single_exe.ps1";
+    std::ifstream verifier_input{verifier_path};
+    const std::string verifier_source{
+        std::istreambuf_iterator<char>{verifier_input},
+        std::istreambuf_iterator<char>{}};
+    if (!verifier_input || verifier_input.bad() ||
+        verifier_source.find("dumpbin /dependents") == std::string::npos ||
+        verifier_source.find("opencv") == std::string::npos ||
+        verifier_source.find("onnxruntime") == std::string::npos ||
+        verifier_source.find("vcruntime") == std::string::npos ||
+        verifier_source.find("msvcp") == std::string::npos ||
+        verifier_source.find("concrt") == std::string::npos ||
+        verifier_source.find("ucrtbase") == std::string::npos ||
+        verifier_source.find("$env:WINDIR") == std::string::npos ||
+        verifier_source.find("System32") == std::string::npos ||
+        verifier_source.find("exit 1") == std::string::npos ||
+        verifier_source.find("rejected") == std::string::npos) {
+        std::cerr << "single-EXE verifier must reject bundled runtimes and resolve system DLLs\n";
         return 1;
     }
     return 0;

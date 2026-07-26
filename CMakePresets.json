@@ -23,11 +23,32 @@
       "name": "windows-release",
       "inherits": "windows-base",
       "binaryDir": "${sourceDir}/build/windows-release"
+    },
+    {
+      "name": "windows-static-base",
+      "hidden": true,
+      "inherits": "windows-base",
+      "cacheVariables": {
+        "VCPKG_TARGET_TRIPLET": "x64-windows-dota-static",
+        "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+      }
+    },
+    {
+      "name": "windows-static-debug",
+      "inherits": "windows-static-base",
+      "binaryDir": "${sourceDir}/build/windows-static-debug"
+    },
+    {
+      "name": "windows-static-release",
+      "inherits": "windows-static-base",
+      "binaryDir": "${sourceDir}/build/windows-static-release"
     }
   ],
   "buildPresets": [
     { "name": "windows-debug", "configurePreset": "windows-debug", "configuration": "Debug" },
-    { "name": "windows-release", "configurePreset": "windows-release", "configuration": "Release" }
+    { "name": "windows-release", "configurePreset": "windows-release", "configuration": "Release" },
+    { "name": "windows-static-debug", "configurePreset": "windows-static-debug", "configuration": "Debug" },
+    { "name": "windows-static-release", "configurePreset": "windows-static-release", "configuration": "Release" }
   ],
   "testPresets": [
     {
@@ -39,6 +60,18 @@
     {
       "name": "windows-release",
       "configurePreset": "windows-release",
+      "configuration": "Release",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "windows-static-debug",
+      "configurePreset": "windows-static-debug",
+      "configuration": "Debug",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "windows-static-release",
+      "configurePreset": "windows-static-release",
       "configuration": "Release",
       "output": { "outputOnFailure": true }
     }
