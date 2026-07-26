@@ -17,6 +17,7 @@ add_library(dk_core
   src/ocr_preprocessor.cpp
   src/ocr_recognizer.cpp
   src/config.cpp
+  src/delay.cpp
   src/metrics.cpp
   src/app.cpp)
 target_include_directories(dk_core PUBLIC include ${OpenCV_INCLUDE_DIRS})
