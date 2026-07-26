@@ -171,12 +171,13 @@ private:
 struct Pipeline {
     Pipeline(const dk::AppConfig& config, HWND target, dk::Box capture_region,
              dk::LineRecognizer& recognizer,
+             dk::Logger& logger,
              const dk::CancellationPredicate& cancellation)
         : capture_region(std::move(capture_region)),
           detector(config.detector),
           capture(capture_region),
           input(target, config.inter_key_delay_us, cancellation),
-          app(config, capture, detector, recognizer, input, cancellation) {}
+          app(config, capture, detector, recognizer, input, logger, cancellation) {}
 
     dk::Box capture_region;
     dk::CandidateDetector detector;
@@ -187,6 +188,7 @@ struct Pipeline {
 
 std::unique_ptr<Pipeline> build_pipeline(
     const dk::AppConfig& config, HWND target, dk::LineRecognizer& recognizer,
+    dk::Logger& logger,
     const dk::CancellationPredicate& cancellation) {
     const auto region = screen_region(target, config);
     if (!region) {
@@ -194,7 +196,7 @@ std::unique_ptr<Pipeline> build_pipeline(
             "The configured region is invalid for the current game client bounds.");
     }
     return std::make_unique<Pipeline>(
-        config, target, *region, recognizer, cancellation);
+        config, target, *region, recognizer, logger, cancellation);
 }
 
 dk::AppConfig load_startup_config() {
@@ -216,6 +218,7 @@ int wmain(int argc, wchar_t* argv[]) {
     try {
         const bool install_check = is_install_check(argc, argv);
         auto config = install_check ? dk::load_config("config.json") : load_startup_config();
+        dk::Logger logger{config.log_level, std::cout, std::cerr};
         std::cout << "\n========================================\n"
                   << (config.live_input ? "       LIVE INPUT ENABLED\n"
                                         : "             DRY RUN\n")
@@ -316,7 +319,7 @@ int wmain(int argc, wchar_t* argv[]) {
                 } else {
                     pipeline.reset();
                     pipeline = build_pipeline(
-                        config, target, recognizer, cancellation);
+                        config, target, recognizer, logger, cancellation);
                     announced_processing = true;
                     consecutive_frame_errors = 0;
                     next_metrics = std::chrono::steady_clock::now() +
@@ -359,7 +362,7 @@ int wmain(int argc, wchar_t* argv[]) {
                 pipeline->capture_region != *current_region) {
                 pipeline.reset();
                 pipeline = build_pipeline(
-                    config, target, recognizer, cancellation);
+                    config, target, recognizer, logger, cancellation);
                 std::cout
                     << "Game window moved; capture rebuilt before processing.\n";
             }

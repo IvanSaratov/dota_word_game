@@ -17,7 +17,7 @@ namespace dk {
 class App {
 public:
     App(const AppConfig& config, FrameSource& frames, CandidateDetector& detector,
-        LineRecognizer& recognizer, InputSink& input,
+        LineRecognizer& recognizer, InputSink& input, Logger& logger,
         CancellationPredicate cancellation = {},
         DelayFunction delay = static_cast<bool (*)(
             std::chrono::milliseconds, const CancellationPredicate&)>(
@@ -32,6 +32,7 @@ private:
     CandidateDetector& detector_;
     LineRecognizer& recognizer_;
     InputSink& input_;
+    Logger& logger_;
     CancellationPredicate cancellation_;
     DelayFunction delay_;
     TargetTracker tracker_;

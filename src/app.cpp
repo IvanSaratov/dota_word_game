@@ -81,13 +81,14 @@ std::optional<TextCandidate> revalidate(
 }  // namespace
 
 App::App(const AppConfig& config, FrameSource& frames, CandidateDetector& detector,
-         LineRecognizer& recognizer, InputSink& input,
+         LineRecognizer& recognizer, InputSink& input, Logger& logger,
          CancellationPredicate cancellation, DelayFunction delay)
     : config_(config),
       frames_(frames),
       detector_(detector),
       recognizer_(recognizer),
       input_(input),
+      logger_(logger),
       cancellation_(std::move(cancellation)),
       delay_(std::move(delay)),
       tracker_(config.tracker) {}
