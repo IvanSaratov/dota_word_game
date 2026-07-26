@@ -201,6 +201,10 @@ int main() {
             "static gate install check");
         valid &= require_text(
             static_gate_source,
+            "Schema error: Trying to register schema",
+            "static gate ONNX startup-noise check");
+        valid &= require_text(
+            static_gate_source,
             "scripts/verify_single_exe.ps1",
             "static gate dependency verification");
         if (static_gate_source.find("actions/upload-artifact") != std::string::npos ||

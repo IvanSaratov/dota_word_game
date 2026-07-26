@@ -267,6 +267,8 @@ int main() {
         verifier_source.find("ucrtbase") == std::string::npos ||
         verifier_source.find("$env:WINDIR") == std::string::npos ||
         verifier_source.find("System32") == std::string::npos ||
+        verifier_source.find("vswhere.exe") == std::string::npos ||
+        verifier_source.find("Hostx64\\x64\\dumpbin.exe") == std::string::npos ||
         verifier_source.find("exit 1") == std::string::npos ||
         verifier_source.find("rejected") == std::string::npos) {
         std::cerr << "single-EXE verifier must reject bundled runtimes and resolve system DLLs\n";

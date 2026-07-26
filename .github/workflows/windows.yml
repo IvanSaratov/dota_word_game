@@ -401,6 +401,9 @@ jobs:
             if ($checkExitCode -ne 0) {
               throw "dota_keyboard.exe --check-install exited with $checkExitCode."
             }
+            if ($checkOutput -match 'Schema error: Trying to register schema') {
+              throw 'Static dota_keyboard.exe emitted the ONNX Runtime schema registration flood.'
+            }
           } finally {
             Pop-Location
           }

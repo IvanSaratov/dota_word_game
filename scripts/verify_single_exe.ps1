@@ -14,8 +14,40 @@ if (-not $env:WINDIR) {
   throw 'WINDIR is not set.'
 }
 
-$dumpbin = Get-Command dumpbin.exe -ErrorAction Stop
-$dumpbinOutput = @(& $dumpbin.Path /dependents $Executable 2>&1)
+$dumpbin = Get-Command dumpbin.exe -ErrorAction SilentlyContinue
+if ($dumpbin) {
+  $dumpbinPath = $dumpbin.Path
+} else {
+  $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+  if (-not (Test-Path -LiteralPath $vswhere -PathType Leaf)) {
+    throw 'dumpbin.exe was not found and vswhere.exe is unavailable.'
+  }
+  $visualStudioPath = @(
+    & $vswhere -latest -products * `
+      -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+      -property installationPath
+  )[0]
+  if (-not $visualStudioPath) {
+    throw 'No Visual Studio installation with the x64 C++ tools was found.'
+  }
+  $msvcRoot = Join-Path $visualStudioPath 'VC\Tools\MSVC'
+  $dumpbinCandidates = @(
+    Get-ChildItem -LiteralPath $msvcRoot -Directory |
+      Sort-Object Name -Descending |
+      ForEach-Object {
+        $candidate = Join-Path $_.FullName 'bin\Hostx64\x64\dumpbin.exe'
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+          $candidate
+        }
+      }
+  )
+  if ($dumpbinCandidates.Count -eq 0) {
+    throw 'Visual Studio x64 dumpbin.exe was not found.'
+  }
+  $dumpbinPath = $dumpbinCandidates[0]
+}
+
+$dumpbinOutput = @(& $dumpbinPath /dependents $Executable 2>&1)
 $dumpbinExitCode = $LASTEXITCODE
 $dumpbinOutput | ForEach-Object { Write-Host $_ }
 if ($dumpbinExitCode -ne 0) {
