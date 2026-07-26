@@ -72,6 +72,16 @@ std::vector<CompoundTarget> CompoundTargetAssembler::update(
         return std::ranges::find(lines, entry.first, &LineTrackSnapshot::id) ==
                lines.end();
     });
+    const auto id_is_present = [&](TrackId id) {
+        return std::ranges::find(lines, id, &LineTrackSnapshot::id) !=
+               lines.end();
+    };
+    std::erase_if(quarantined_ids_, [&](TrackId id) {
+        return !id_is_present(id);
+    });
+    std::erase_if(sent_owned_ids_, [&](TrackId id) {
+        return !id_is_present(id);
+    });
 
     std::vector<TrackId> text_changes;
     for (const auto& line : lines) {
@@ -87,12 +97,47 @@ std::vector<CompoundTarget> CompoundTargetAssembler::update(
     }
 
     std::erase_if(pairs_, [&](const auto& entry) {
-        const auto has_id = [&](TrackId id) {
-            return std::ranges::find(lines, id, &LineTrackSnapshot::id) !=
-                   lines.end();
-        };
-        return !has_id(entry.first.first) || !has_id(entry.first.second);
+        return !id_is_present(entry.first.first) ||
+               !id_is_present(entry.first.second);
     });
+
+    for (const auto& entry : pairs_) {
+        const auto& key = entry.first;
+        const auto left =
+            std::ranges::find(lines, key.first, &LineTrackSnapshot::id);
+        const auto right =
+            std::ranges::find(lines, key.second, &LineTrackSnapshot::id);
+        if (left->observed_this_frame && right->observed_this_frame) {
+            continue;
+        }
+
+        const auto sent_owned =
+            left->sent || right->sent ||
+            sent_owned_ids_.contains(left->id) ||
+            sent_owned_ids_.contains(right->id);
+        if (!sent_owned) {
+            quarantined_ids_.insert(left->id);
+            quarantined_ids_.insert(right->id);
+        }
+        for (const auto& line : lines) {
+            if (!line.observed_this_frame) {
+                continue;
+            }
+            const auto overlaps_missing_member =
+                (!left->observed_this_frame &&
+                 expanded_boxes_connect(line, *left)) ||
+                (!right->observed_this_frame &&
+                 expanded_boxes_connect(line, *right));
+            if (!overlaps_missing_member) {
+                continue;
+            }
+            if (sent_owned) {
+                sent_owned_ids_.insert(line.id);
+            } else {
+                quarantined_ids_.insert(line.id);
+            }
+        }
+    }
 
     for (std::size_t left_index = 0; left_index < lines.size(); ++left_index) {
         for (std::size_t right_index = left_index + 1;
@@ -103,14 +148,21 @@ std::vector<CompoundTarget> CompoundTargetAssembler::update(
             auto existing = pairs_.find(key);
 
             if (!left.observed_this_frame || !right.observed_this_frame) {
-                if (existing != pairs_.end() && !existing->second.grouped) {
-                    pairs_.erase(existing);
+                if (existing != pairs_.end()) {
+                    existing->second.ambiguous = true;
+                    existing->second.clean_frames = 0;
+                    existing->second.provisional = true;
                 }
                 continue;
             }
             if (!expanded_boxes_connect(left, right)) {
                 if (existing != pairs_.end()) {
-                    pairs_.erase(existing);
+                    if (existing->second.grouped) {
+                        existing->second.ambiguous = true;
+                        existing->second.clean_frames = 0;
+                    } else {
+                        pairs_.erase(existing);
+                    }
                 }
                 continue;
             }
@@ -172,6 +224,20 @@ std::vector<CompoundTarget> CompoundTargetAssembler::update(
                 state.grouped = true;
                 state.provisional = false;
             }
+        }
+    }
+
+    for (const auto& [key, state] : pairs_) {
+        if (!state.grouped || state.ambiguous) {
+            continue;
+        }
+        const auto left =
+            std::ranges::find(lines, key.first, &LineTrackSnapshot::id);
+        const auto right =
+            std::ranges::find(lines, key.second, &LineTrackSnapshot::id);
+        if (left->observed_this_frame && right->observed_this_frame) {
+            quarantined_ids_.erase(key.first);
+            quarantined_ids_.erase(key.second);
         }
     }
 
@@ -239,7 +305,11 @@ std::vector<CompoundTarget> CompoundTargetAssembler::update(
             target.bounds = united_bounds(target.bounds, member->value.bounds);
             target.observed_this_frame =
                 target.observed_this_frame && member->observed_this_frame;
-            target.sent_owned = target.sent_owned || member->sent;
+            target.sent_owned =
+                target.sent_owned || member->sent ||
+                sent_owned_ids_.contains(member->id);
+            target.ambiguous =
+                target.ambiguous || quarantined_ids_.contains(member->id);
         }
         for (const auto& [key, state] : pairs_) {
             const auto contains = [&](TrackId id) {

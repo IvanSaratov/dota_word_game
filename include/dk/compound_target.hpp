@@ -1,6 +1,7 @@
 #pragma once
 
 #include <map>
+#include <set>
 #include <span>
 #include <string>
 #include <utility>
@@ -37,6 +38,8 @@ private:
 
     std::map<std::pair<TrackId, TrackId>, PairState> pairs_;
     std::map<TrackId, std::string> text_by_id_;
+    std::set<TrackId> quarantined_ids_;
+    std::set<TrackId> sent_owned_ids_;
 };
 
 }  // namespace dk
