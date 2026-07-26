@@ -59,6 +59,10 @@ TEST_CASE("post-send delay has a validated JSON contract") {
 
     const auto parsed = dk::parse_config(R"({"post_send_delay_ms":250})");
     CHECK(parsed.post_send_delay_ms == 250);
+    CHECK(dk::parse_config(R"({"post_send_delay_ms":0})").post_send_delay_ms ==
+          0);
+    CHECK(dk::parse_config(R"({"post_send_delay_ms":5000})")
+              .post_send_delay_ms == 5000);
     CHECK(dk::parse_config(R"({})").post_send_delay_ms == 100);
     CHECK(dk::parse_config(dk::serialize_config(parsed)).post_send_delay_ms == 250);
 
@@ -67,6 +71,12 @@ TEST_CASE("post-send delay has a validated JSON contract") {
         Catch::Matchers::ContainsSubstring("post_send_delay_ms"));
     CHECK_THROWS_WITH(
         dk::parse_config(R"({"post_send_delay_ms":5001})"),
+        Catch::Matchers::ContainsSubstring("post_send_delay_ms"));
+    CHECK_THROWS_WITH(
+        dk::parse_config(R"({"post_send_delay_ms":4294967296})"),
+        Catch::Matchers::ContainsSubstring("post_send_delay_ms"));
+    CHECK_THROWS_WITH(
+        dk::parse_config(R"({"post_send_delay_ms":-4294967296})"),
         Catch::Matchers::ContainsSubstring("post_send_delay_ms"));
     CHECK_THROWS_WITH(
         dk::parse_config(R"({"post_send_delay_ms":"100"})"),
