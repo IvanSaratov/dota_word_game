@@ -293,6 +293,31 @@ AppConfig AppConfig::defaults() {
     return {};
 }
 
+LogLevel parse_configured_log_level(const std::string_view value) {
+    if (value == "info") {
+        return LogLevel::info;
+    }
+    if (value == "debug") {
+        return LogLevel::debug;
+    }
+    throw std::invalid_argument(
+        "log_level must be exactly \"info\" or \"debug\"");
+}
+
+std::string_view configured_log_level_name(const LogLevel value) {
+    switch (value) {
+        case LogLevel::info:
+            return "info";
+        case LogLevel::debug:
+            return "debug";
+        case LogLevel::warning:
+        case LogLevel::error:
+            break;
+    }
+    throw std::invalid_argument(
+        "log_level configuration supports only info or debug");
+}
+
 std::string serialize_config(const AppConfig& config) {
     validate(config);
 
@@ -301,6 +326,7 @@ std::string serialize_config(const AppConfig& config) {
         {"region", box_to_json(config.region)},
         {"region_configured", config.region_configured},
         {"live_input", config.live_input},
+        {"log_level", std::string{configured_log_level_name(config.log_level)}},
         {"min_ocr_confidence", config.min_ocr_confidence},
         {"inter_key_delay_us", config.inter_key_delay_us},
         {"post_send_delay_ms", config.post_send_delay_ms},
@@ -330,6 +356,14 @@ AppConfig parse_config(std::string_view text) {
     }
     config.region_configured = json.value("region_configured", config.region_configured);
     config.live_input = json.value("live_input", config.live_input);
+    if (const auto iterator = json.find("log_level"); iterator != json.end()) {
+        if (!iterator->is_string()) {
+            throw std::invalid_argument(
+                "log_level must be a string containing info or debug");
+        }
+        config.log_level =
+            parse_configured_log_level(iterator->get<std::string>());
+    }
     config.min_ocr_confidence =
         json.value("min_ocr_confidence", config.min_ocr_confidence);
     config.inter_key_delay_us = json.value("inter_key_delay_us", config.inter_key_delay_us);

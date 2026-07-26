@@ -8,6 +8,7 @@
   },
   "region_configured": false,
   "live_input": false,
+  "log_level": "info",
   "min_ocr_confidence": 0.8,
   "inter_key_delay_us": 0,
   "post_send_delay_ms": 100,
