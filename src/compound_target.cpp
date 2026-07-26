@@ -78,19 +78,47 @@ std::vector<CompoundTarget> CompoundTargetAssembler::update(
         return std::ranges::find(lines, id, &LineTrackSnapshot::id) !=
                lines.end();
     };
-    for (auto& entry : quarantined_by_pair_) {
-        auto& ids = entry.second;
-        std::erase_if(ids, [&](TrackId id) {
-            return !id_is_present(id);
-        });
+    for (auto& [key, episode] : ambiguity_episodes_) {
+        if (!id_is_present(key.first) || !id_is_present(key.second)) {
+            episode.active = false;
+        }
+        for (auto replacement = episode.replacement_texts.begin();
+             replacement != episode.replacement_texts.end();) {
+            const auto line = std::ranges::find(
+                lines, replacement->first, &LineTrackSnapshot::id);
+            if (line == lines.end()) {
+                replacement =
+                    episode.replacement_texts.erase(replacement);
+            } else if (
+                line->observed_this_frame &&
+                line->value.normalized_text != replacement->second) {
+                if (episode.active) {
+                    replacement->second = line->value.normalized_text;
+                    ++replacement;
+                } else {
+                    replacement =
+                        episode.replacement_texts.erase(replacement);
+                }
+            } else {
+                ++replacement;
+            }
+        }
     }
-    std::erase_if(quarantined_by_pair_, [](const auto& entry) {
-        return entry.second.empty();
+    std::erase_if(ambiguity_episodes_, [](const auto& entry) {
+        return !entry.second.active &&
+               entry.second.replacement_texts.empty();
     });
     std::erase_if(sent_compounds_, [&](auto& sent) {
         std::erase_if(sent.line_ids, [&](TrackId id) {
             return !id_is_present(id);
         });
+        for (const auto& line : lines) {
+            if (line.observed_this_frame && !line.sent &&
+                sent.line_ids.contains(line.id) &&
+                line.value.normalized_text != sent.normalized_text) {
+                sent.line_ids.erase(line.id);
+            }
+        }
         if (sent.line_ids.empty()) {
             return true;
         }
@@ -144,10 +172,36 @@ std::vector<CompoundTarget> CompoundTargetAssembler::update(
             std::ranges::find(lines, key.first, &LineTrackSnapshot::id);
         const auto right =
             std::ranges::find(lines, key.second, &LineTrackSnapshot::id);
-        if (left->observed_this_frame && right->observed_this_frame) {
+        if ((left->observed_this_frame && right->observed_this_frame) ||
+            (left->sent && right->sent)) {
             continue;
         }
+        auto& episode = ambiguity_episodes_[key];
+        episode.active = true;
+        episode.clean_frames = 0;
+    }
 
+    for (auto& [key, episode] : ambiguity_episodes_) {
+        if (!episode.active) {
+            continue;
+        }
+        const auto left =
+            std::ranges::find(lines, key.first, &LineTrackSnapshot::id);
+        const auto right =
+            std::ranges::find(lines, key.second, &LineTrackSnapshot::id);
+        if (left == lines.end() || right == lines.end() ||
+            (left->sent && right->sent)) {
+            episode.active = false;
+            continue;
+        }
+        if (left->observed_this_frame && right->observed_this_frame) {
+            ++episode.clean_frames;
+            if (episode.clean_frames >= 2) {
+                episode.active = false;
+            }
+            continue;
+        }
+        episode.clean_frames = 0;
         for (const auto& line : lines) {
             if (!line.observed_this_frame ||
                 line.id == key.first || line.id == key.second) {
@@ -161,7 +215,8 @@ std::vector<CompoundTarget> CompoundTargetAssembler::update(
             if (!overlaps_missing_member) {
                 continue;
             }
-            quarantined_by_pair_[key].insert(line.id);
+            episode.replacement_texts.insert_or_assign(
+                line.id, line.value.normalized_text);
         }
     }
 
@@ -276,17 +331,22 @@ std::vector<CompoundTarget> CompoundTargetAssembler::update(
         const auto right =
             std::ranges::find(lines, key.second, &LineTrackSnapshot::id);
         if (left->observed_this_frame && right->observed_this_frame) {
-            for (auto& entry : quarantined_by_pair_) {
-                auto& ids = entry.second;
-                if (ids.contains(key.first) && ids.contains(key.second)) {
-                    ids.erase(key.first);
-                    ids.erase(key.second);
+            for (auto& [cause, episode] : ambiguity_episodes_) {
+                if (cause == key) {
+                    episode.active = false;
+                }
+                if (episode.replacement_texts.contains(key.first) &&
+                    episode.replacement_texts.contains(key.second)) {
+                    episode.replacement_texts.erase(key.first);
+                    episode.replacement_texts.erase(key.second);
+                    episode.active = false;
                 }
             }
         }
     }
-    std::erase_if(quarantined_by_pair_, [](const auto& entry) {
-        return entry.second.empty();
+    std::erase_if(ambiguity_episodes_, [](const auto& entry) {
+        return !entry.second.active &&
+               entry.second.replacement_texts.empty();
     });
 
     std::vector<bool> retained(lines.size());
@@ -362,8 +422,9 @@ std::vector<CompoundTarget> CompoundTargetAssembler::update(
             target.ambiguous =
                 target.ambiguous ||
                 std::ranges::any_of(
-                    quarantined_by_pair_, [&](const auto& cause) {
-                        return cause.second.contains(member->id);
+                    ambiguity_episodes_, [&](const auto& episode) {
+                        return episode.second.replacement_texts.contains(
+                            member->id);
                     });
         }
         for (const auto& [key, state] : pairs_) {

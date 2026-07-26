@@ -45,10 +45,16 @@ private:
         Box bounds;
     };
 
+    struct AmbiguityEpisode {
+        std::map<TrackId, std::string> replacement_texts;
+        int clean_frames{};
+        bool active{true};
+    };
+
     std::map<std::pair<TrackId, TrackId>, PairState> pairs_;
     std::map<TrackId, std::string> text_by_id_;
-    std::map<std::pair<TrackId, TrackId>, std::set<TrackId>>
-        quarantined_by_pair_;
+    std::map<std::pair<TrackId, TrackId>, AmbiguityEpisode>
+        ambiguity_episodes_;
     std::vector<SentCompound> sent_compounds_;
 };
 
