@@ -12,6 +12,7 @@ find_package(nlohmann_json CONFIG REQUIRED)
 add_library(dk_core
   src/text_normalizer.cpp
   src/target_tracker.cpp
+  src/compound_target.cpp
   src/candidate_detector.cpp
   src/ctc_decoder.cpp
   src/ocr_preprocessor.cpp
