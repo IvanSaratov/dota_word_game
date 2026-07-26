@@ -13,6 +13,7 @@ add_library(dk_core
   src/text_normalizer.cpp
   src/target_tracker.cpp
   src/compound_target.cpp
+  src/target_scheduler.cpp
   src/candidate_detector.cpp
   src/ctc_decoder.cpp
   src/ocr_preprocessor.cpp
