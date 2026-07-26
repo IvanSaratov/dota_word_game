@@ -574,6 +574,68 @@ TEST_CASE("sent compound alias releases when its OCR text changes") {
             std::vector<std::string>{"PHANTOMASSASSIN", "FRESH"});
 }
 
+TEST_CASE("sent compound rejects a new non-exact merged OCR line") {
+    auto config = dk::AppConfig::defaults();
+    config.live_input = true;
+    FakeFrameSource frames{5};
+    SequencedDetector detector{{
+        {{100, 100, 220, 40}, {100, 155, 220, 40}},
+        {{100, 110, 220, 40}, {100, 165, 220, 40}},
+        {{100, 120, 220, 40}, {100, 175, 220, 40}},
+        {{100, 120, 220, 95}},
+        {{100, 120, 220, 95}},
+    }};
+    FakeRecognizer recognizer{{
+        {"PHANTOM", .99F}, {"ASSASSIN", .99F},
+        {"PHANTOM", .99F}, {"ASSASSIN", .99F},
+        {"PHANTOM", .99F}, {"ASSASSIN", .99F},
+        {"PHANTOMASSASSI", .99F},
+        {"PHANTOMASSASSI", .99F},
+    }};
+    FakeInputSink input;
+    dk::App app(config, frames, detector, recognizer, input, {}, complete_delay);
+
+    for (int frame = 0; frame < 5; ++frame) {
+        CHECK(app.process_one_frame());
+    }
+
+    REQUIRE(input.sent ==
+            std::vector<std::string>{"PHANTOMASSASSIN"});
+}
+
+TEST_CASE("independently sent targets never own a later merged OCR line") {
+    auto config = dk::AppConfig::defaults();
+    config.live_input = true;
+    FakeFrameSource frames{7};
+    SequencedDetector detector{{
+        {{30, 500, 180, 40}, {700, 50, 180, 40}},
+        {{30, 500, 180, 40}, {700, 50, 180, 40}},
+        {{30, 500, 180, 40}, {700, 50, 180, 40}},
+        {{100, 100, 220, 40}, {100, 155, 220, 40}},
+        {{100, 110, 220, 40}, {100, 165, 220, 40}},
+        {{100, 120, 220, 95}},
+        {{100, 120, 220, 95}},
+    }};
+    FakeRecognizer recognizer{{
+        {"ALPHA", .99F}, {"BETA", .99F},
+        {"ALPHA", .99F}, {"BETA", .99F},
+        {"ALPHA", .99F}, {"BETA", .99F},
+        {"ALPHA", .99F}, {"BETA", .99F},
+        {"ALPHA", .99F}, {"BETA", .99F},
+        {"ALPHABETA", .99F},
+        {"ALPHABETA", .99F},
+    }};
+    FakeInputSink input;
+    dk::App app(config, frames, detector, recognizer, input, {}, complete_delay);
+
+    for (int frame = 0; frame < 7; ++frame) {
+        CHECK(app.process_one_frame());
+    }
+
+    REQUIRE(input.sent ==
+            std::vector<std::string>{"ALPHA", "BETA"});
+}
+
 TEST_CASE("post-send pacing receives live cancellation state") {
     auto config = dk::AppConfig::defaults();
     config.live_input = true;
