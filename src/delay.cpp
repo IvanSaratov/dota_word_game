@@ -8,6 +8,19 @@ namespace dk {
 bool interruptible_delay(
     std::chrono::milliseconds duration,
     const CancellationPredicate& cancellation) {
+    static const DelayRuntime runtime{
+        [] { return std::chrono::steady_clock::now(); },
+        [](auto sleep_duration) {
+            std::this_thread::sleep_for(sleep_duration);
+        },
+    };
+    return interruptible_delay(duration, cancellation, runtime);
+}
+
+bool interruptible_delay(
+    std::chrono::milliseconds duration,
+    const CancellationPredicate& cancellation,
+    const DelayRuntime& runtime) {
     if (duration <= std::chrono::milliseconds::zero()) {
         return true;
     }
@@ -15,15 +28,15 @@ bool interruptible_delay(
     constexpr auto poll_interval =
         std::chrono::duration_cast<std::chrono::steady_clock::duration>(
             std::chrono::milliseconds{5});
-    const auto deadline = std::chrono::steady_clock::now() + duration;
-    auto now = std::chrono::steady_clock::now();
+    auto now = runtime.now();
+    const auto deadline = now + duration;
     while (now < deadline) {
         if (cancellation && cancellation()) {
             return false;
         }
 
-        std::this_thread::sleep_for(std::min(deadline - now, poll_interval));
-        now = std::chrono::steady_clock::now();
+        runtime.sleep_for(std::min(deadline - now, poll_interval));
+        now = runtime.now();
     }
     return true;
 }
