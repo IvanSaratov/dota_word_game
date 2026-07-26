@@ -252,3 +252,47 @@ TEST_CASE("provisional proximity never transfers sent ownership") {
     REQUIRE(fresh != targets.end());
     CHECK_FALSE(fresh->sent_owned);
 }
+
+TEST_CASE("released sent alias remains ambiguous in an unrelated episode") {
+    dk::CompoundTargetAssembler assembler;
+    std::vector<dk::CompoundTarget> targets;
+    for (int frame = 0; frame < 3; ++frame) {
+        targets = update(assembler, {
+            line(1, "AA", {100, 100 + frame * 8, 180, 40}),
+            line(2, "BB", {100, 155 + frame * 8, 180, 40}),
+            line(4, "XX", {600, 100 + frame * 8, 180, 40}),
+            line(5, "YY", {600, 155 + frame * 8, 180, 40}),
+        });
+    }
+    const auto sent = std::ranges::find_if(
+        targets, [](const auto& target) {
+            return target.line_ids == std::vector<dk::TrackId>{1, 2};
+        });
+    REQUIRE(sent != targets.end());
+    assembler.mark_sent(*sent);
+
+    for (int frame = 0; frame < 2; ++frame) {
+        update(assembler, {
+            line(1, "AA", {100, 116, 180, 40}, true, false),
+            line(2, "BB", {100, 171, 180, 40}, true, false),
+            line(3, "AABB", {100, 120, 180, 95}),
+            line(4, "XX", {600, 124 + frame * 8, 180, 40}),
+            line(5, "YY", {600, 179 + frame * 8, 180, 40}),
+        });
+    }
+
+    targets = update(assembler, {
+        line(1, "AA", {100, 116, 180, 40}, true, false),
+        line(2, "BB", {100, 171, 180, 40}, true, false),
+        line(3, "FRESH", {600, 150, 180, 95}),
+        line(4, "XX", {600, 132, 180, 40}, false, false),
+        line(5, "YY", {600, 187, 180, 40}, false, false),
+    });
+    const auto fresh = std::ranges::find_if(
+        targets, [](const auto& target) {
+            return target.line_ids == std::vector<dk::TrackId>{3};
+        });
+    REQUIRE(fresh != targets.end());
+    CHECK(fresh->ambiguous);
+    CHECK_FALSE(fresh->sent_owned);
+}
