@@ -780,6 +780,59 @@ TEST_CASE("debug logs raw OCR and per-frame timing") {
     CHECK(err.str().empty());
 }
 
+TEST_CASE("debug logs an empty clipped OCR box rejection") {
+    auto config = dk::AppConfig::defaults();
+    FakeFrameSource frames{1};
+    FakeDetector detector{{{1200, 800, 100, 30}}};
+    FakeRecognizer recognizer{{}};
+    FakeInputSink input;
+    std::ostringstream out;
+    std::ostringstream err;
+    dk::Logger logger{
+        dk::LogLevel::debug, out, err, nullptr,
+        [] { return std::chrono::system_clock::time_point{}; }};
+    dk::App app(
+        config, frames, detector, recognizer, input, logger, {},
+        complete_delay);
+
+    CHECK(app.process_one_frame());
+
+    CHECK(
+        out.str().find(
+            "[DEBUG] OCR candidate rejected: clipped box is empty; "
+            "detected_box=(1200,800,100,30)") != std::string::npos);
+    CHECK(err.str().empty());
+}
+
+TEST_CASE("debug logs OCR length and confidence rejection thresholds") {
+    auto config = dk::AppConfig::defaults();
+    config.min_ocr_confidence = .90F;
+    FakeFrameSource frames{1};
+    FakeDetector detector{{{10, 20, 100, 30}, {20, 60, 120, 30}}};
+    FakeRecognizer recognizer{{{"---", .99F}, {"VALID", .50F}}};
+    FakeInputSink input;
+    std::ostringstream out;
+    std::ostringstream err;
+    dk::Logger logger{
+        dk::LogLevel::debug, out, err, nullptr,
+        [] { return std::chrono::system_clock::time_point{}; }};
+    dk::App app(
+        config, frames, detector, recognizer, input, logger, {},
+        complete_delay);
+
+    CHECK(app.process_one_frame());
+
+    CHECK(
+        out.str().find(
+            "[DEBUG] OCR candidate rejected: normalized_length=0 minimum=2") !=
+        std::string::npos);
+    CHECK(
+        out.str().find(
+            "[DEBUG] OCR candidate rejected: confidence=0.500 minimum=0.900") !=
+        std::string::npos);
+    CHECK(err.str().empty());
+}
+
 TEST_CASE("blocked and partial input are warning records") {
     for (const auto status : {dk::SendStatus::blocked, dk::SendStatus::partial}) {
         auto config = dk::AppConfig::defaults();
