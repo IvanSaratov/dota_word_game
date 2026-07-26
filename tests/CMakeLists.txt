@@ -9,6 +9,7 @@ endfunction()
 
 dk_add_test(text_normalizer_test text_normalizer_test.cpp)
 dk_add_test(target_tracker_test target_tracker_test.cpp)
+dk_add_test(compound_target_test compound_target_test.cpp)
 dk_add_test(candidate_detector_test candidate_detector_test.cpp)
 dk_add_test(ctc_decoder_test ctc_decoder_test.cpp)
 dk_add_test(ocr_preprocessor_test ocr_preprocessor_test.cpp)
