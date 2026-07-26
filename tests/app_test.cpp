@@ -458,6 +458,33 @@ TEST_CASE("app waits for two clean frames after multiline lines cross") {
     REQUIRE(input.sent == std::vector<std::string>{"BOTTOMTOP"});
 }
 
+TEST_CASE("app never sends a merged OCR line born during unresolved overlap") {
+    auto config = dk::AppConfig::defaults();
+    config.live_input = true;
+    FakeFrameSource frames{5};
+    SequencedDetector detector{{
+        {{100, 100, 220, 40}, {100, 155, 220, 40}},
+        {{100, 110, 220, 40}, {100, 165, 220, 40}},
+        {{100, 120, 220, 95}},
+        {{100, 120, 220, 95}},
+        {{100, 120, 220, 95}},
+    }};
+    FakeRecognizer recognizer{{
+        {"TOP", .99F}, {"BOTTOM", .99F},
+        {"TOP", .99F}, {"BOTTOM", .99F},
+        {"TOPBOTTOM", .99F},
+        {"TOPBOTTOM", .99F},
+        {"TOPBOTTOM", .99F},
+    }};
+    FakeInputSink input;
+    dk::App app(config, frames, detector, recognizer, input, {}, complete_delay);
+
+    for (int frame = 0; frame < 5; ++frame) {
+        CHECK(app.process_one_frame());
+        CHECK(input.sent.empty());
+    }
+}
+
 TEST_CASE("post-send pacing receives live cancellation state") {
     auto config = dk::AppConfig::defaults();
     config.live_input = true;
