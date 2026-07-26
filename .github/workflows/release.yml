@@ -183,6 +183,11 @@ jobs:
           } finally {
             Pop-Location
           }
+          $runtimeLog = Join-Path $extractRoot 'dota-keyboard.log'
+          if (-not (Test-Path -LiteralPath $runtimeLog)) {
+            throw 'Portable smoke test did not create dota-keyboard.log.'
+          }
+          Remove-Item -LiteralPath $runtimeLog -Force
 
       - name: Validate installer
         shell: pwsh

@@ -127,6 +127,28 @@ bool require_flat_portable_artifact(
     return valid;
 }
 
+bool require_clean_portable_artifact(
+    const std::string& source, const char* workflow_name) {
+    bool valid = true;
+    valid &= require_text(
+        source,
+        "$runtimeLog = Join-Path $extractRoot 'dota-keyboard.log'",
+        "runtime log path after portable smoke test");
+    valid &= require_text(
+        source,
+        "if (-not (Test-Path -LiteralPath $runtimeLog))",
+        "portable smoke test log creation validation");
+    valid &= require_text(
+        source,
+        "Remove-Item -LiteralPath $runtimeLog -Force",
+        "runtime log removal before portable artifact upload");
+    if (!valid) {
+        std::cerr << workflow_name
+                  << " must validate and remove the smoke-test log before upload\n";
+    }
+    return valid;
+}
+
 }  // namespace
 
 int main() {
@@ -143,6 +165,8 @@ int main() {
     valid &= require_vcpkg_cache_contracts(release_source, "release.yml");
     valid &= require_flat_portable_artifact(windows_source, "windows.yml");
     valid &= require_flat_portable_artifact(release_source, "release.yml");
+    valid &= require_clean_portable_artifact(windows_source, "windows.yml");
+    valid &= require_clean_portable_artifact(release_source, "release.yml");
     valid &= require_text(
         release_source, "--generate-notes", "generated GitHub release notes");
     valid &= require_text(
