@@ -338,19 +338,24 @@ TEST_CASE("accepted live and dry targets apply pacing before a fresh capture") {
         config.live_input = live_input;
         config.post_send_delay_ms = 275;
         FakeFrameSource frames{3};
-        FakeDetector detector{{{30, 200, 180, 40}}};
+        FakeDetector detector{{
+            {30, 300, 180, 40},
+            {30, 200, 180, 40},
+        }};
         FakeRecognizer recognizer{{
-            {"TARGET", .99F},
-            {"TARGET", .99F},
-            {"TARGET", .99F},
+            {"LOWER", .99F}, {"UPPER", .99F},
+            {"LOWER", .99F}, {"UPPER", .99F},
+            {"LOWER", .99F}, {"UPPER", .99F},
         }};
         FakeInputSink input;
         std::vector<std::chrono::milliseconds> delays;
         const dk::DelayFunction delay =
             [&](auto duration, const auto&) {
                 delays.push_back(duration);
-                CHECK(frames.returned_frames == 2);
-                CHECK(input.sent.size() == (live_input ? 1 : 0));
+                CHECK(frames.returned_frames ==
+                      static_cast<int>(delays.size()) + 1);
+                CHECK(input.sent.size() ==
+                      (live_input ? delays.size() : 0));
                 return true;
             };
         dk::App app(config, frames, detector, recognizer, input, {}, delay);
@@ -362,8 +367,13 @@ TEST_CASE("accepted live and dry targets apply pacing before a fresh capture") {
 
         CHECK(app.process_one_frame());
         CHECK(frames.returned_frames == 3);
-        CHECK(delays == std::vector{275ms});
-        CHECK(input.sent.size() == (live_input ? 1 : 0));
+        CHECK((delays == std::vector{275ms, 275ms}));
+        if (live_input) {
+            CHECK((input.sent ==
+                   std::vector<std::string>{"LOWER", "UPPER"}));
+        } else {
+            CHECK(input.sent.empty());
+        }
     }
 }
 
