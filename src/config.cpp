@@ -334,8 +334,21 @@ AppConfig parse_config(std::string_view text) {
         json.value("min_ocr_confidence", config.min_ocr_confidence);
     config.inter_key_delay_us = json.value("inter_key_delay_us", config.inter_key_delay_us);
     if (const auto iterator = json.find("post_send_delay_ms");
-        iterator != json.end() && !iterator->is_number_integer()) {
-        throw std::invalid_argument("post_send_delay_ms must be an integer");
+        iterator != json.end()) {
+        if (!iterator->is_number_integer()) {
+            throw std::invalid_argument(
+                "post_send_delay_ms must be an integer");
+        }
+
+        const bool out_of_range =
+            iterator->is_number_unsigned()
+                ? iterator->get<std::uint64_t>() > 5000U
+                : iterator->get<std::int64_t>() < 0 ||
+                      iterator->get<std::int64_t>() > 5000;
+        if (out_of_range) {
+            throw std::invalid_argument(
+                "post_send_delay_ms must be between 0 and 5000");
+        }
     }
     config.post_send_delay_ms =
         json.value("post_send_delay_ms", config.post_send_delay_ms);
