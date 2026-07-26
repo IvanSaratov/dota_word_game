@@ -294,6 +294,43 @@ TEST_CASE("cancellation during OCR prevents the final input call") {
     CHECK(input.sent.empty());
 }
 
+TEST_CASE("cancellation during dry-run OCR skips pacing and target lock") {
+    auto config = dk::AppConfig::defaults();
+    config.live_input = false;
+    FakeFrameSource frames{3};
+    FakeDetector detector{{{30, 200, 180, 40}}};
+    FakeRecognizer recognizer{{
+        {"TARGET", .99F},
+        {"TARGET", .99F},
+        {"TARGET", .99F},
+    }};
+    FakeInputSink input;
+    std::atomic_bool processing_enabled{true};
+    const dk::CancellationPredicate cancellation = [&processing_enabled] {
+        return !processing_enabled.load();
+    };
+    std::vector<std::chrono::milliseconds> delays;
+    const dk::DelayFunction delay =
+        [&delays](auto duration, const auto&) {
+            delays.push_back(duration);
+            return true;
+        };
+    dk::App app(config, frames, detector, recognizer, input, cancellation, delay);
+
+    CHECK(app.process_one_frame());
+    recognizer.after_recognize = [&processing_enabled] {
+        processing_enabled = false;
+    };
+    CHECK(app.process_one_frame());
+    CHECK(delays.empty());
+
+    recognizer.after_recognize = {};
+    processing_enabled = true;
+    CHECK(app.process_one_frame());
+    CHECK(delays == std::vector{100ms});
+    CHECK(input.sent.empty());
+}
+
 TEST_CASE("accepted live and dry targets apply pacing before a fresh capture") {
     for (const bool live_input : {false, true}) {
         CAPTURE(live_input);
